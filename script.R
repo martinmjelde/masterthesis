@@ -32,9 +32,23 @@ library(NLP) # Natural Language Processing Infrstructure
 
 if (!require("randomForest"))
   install.packages("randomForest")
-library(randomForest) # Natural Language Processing Infrstructure
+library(randomForest) # Algorithm called RandomForest, a regression and classification algorithm
 
+if(!require("caret"))
+  install.packages("caret")
+library(caret) 
 
+if(!require("reticulate"))
+  install.packages("reticulate")
+library(reticulate)
+
+if(!require("quanteda"))
+  install.packages("quanteda")
+library(quanteda)
+
+if(!require("quanteda.textmodels"))
+  install.packages("quanteda.textmodels")
+library(quanteda.textmodels)
 
 library(readr)
 # Årsak
@@ -112,6 +126,35 @@ spec(årsaksdetalj)
 # Commands that might prove useful:
 readr::tokenizer_csv()
 
+#### Descriptive statistics ####
+ulykke %>% 
+  mutate(ulykkesår = format((years(as.Date(ulykkedato, format = "%d.%m.%Y")))))  %>% 
+  count(ulykkesår) %>% 
+  ggplot(aes(ulykkesår, n)) +
+  geom_col()+
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(
+      angle = 90,
+      size = 10,
+      vjust = 0.5,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  labs(x = "Year", y = "Number of operations per year")
+
+ulykke %>%
+  mutate(ulykkedato = as.Date(ulykkedato)) %>% 
+  count(ulykkedato) %>%
+  ggplot(aes(ulykkedato, n)) +
+  geom_col() +
+  labs(x = "Year", y = "Number of operations per decade")
+
+
 ##### Functions #####
 # function to get & plot the most informative terms by a specificed number
 # of topics, using LDA
@@ -167,7 +210,7 @@ top_terms_by_topic_LDA <- function(input_text, # should be a columm from a dataf
 årsaksDTM_tidy <- tidy(årsaksDTM)
 
 # I'm going to add my own custom stop words that I don't think will be
-# very informative in hotel reviews
+# very informative in these reports
 custom_stop_words <- tibble(word = c("på", ""))
 
 norwegian_stop_words <- tibble(word = tm::stopwords(kind = "no"))
@@ -176,7 +219,7 @@ norwegian_stop_words <- tibble(word = tm::stopwords(kind = "no"))
 # remove stopwords
 årsaksDTM_tidy_cleaned <- årsaksDTM_tidy %>% # take our tidy dtm and...
   anti_join(norwegian_stop_words, by = c("term" = "word")) %>% # remove Norwegian stopwords and
-  anti_jon(stop_words, by = c("term" = "word")) %>% # remove English stopwords as well
+  anti_join(stop_words, by = c("term" = "word")) %>% # remove English stopwords as well
   anti_join(custom_stop_words, by = c("term" = "word")) # remove custom stopwords
 
 # reconstruct cleaned documents (so that each word shows up the correct number of times)
@@ -207,3 +250,4 @@ cleaned_documents_stem <- årsaksDTM_tidy_cleaned_stem %>%
 top_terms_by_topic_LDA(cleaned_documents_stem$terms, number_of_topics = 4)
 
 #### Årsak2 ####
+
