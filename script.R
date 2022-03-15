@@ -145,7 +145,8 @@ ulykke %>%
     axis.title = element_text(size = 10),
     legend.position = "bottom"
   ) +
-  labs(x = "Year", y = "Number of operations per year")
+  scale_y_continuous(breaks = seq(0,2000, by=250))+
+  labs(x = "Year", y = "Number of entries per year")
 
 ulykke %>%
   mutate(ulykkedato = as.Date(ulykkedato)) %>% 
