@@ -1,4 +1,4 @@
-# Loading packages and importing data
+#### Loading packages and importing data ####
 
 # read in the libraries we're going to use
 
@@ -58,8 +58,12 @@ if (!require("chron"))
   install.packages("chron")
 library(chron) # excellent package for managing time variables
 
+if (!require("textrecipes"))
+  install.packages("textrecipes")
+library(textrecipes) # Defining the recipe for the machine learning algorithm
+
 ##### Functions #####
-# function to get & plot the most informative terms by a specificed number
+# function to get & plot the most informative terms by a readr::specificed number
 # of topics, using LDA
 top_terms_by_topic_LDA <-
   function(input_text,
@@ -111,11 +115,13 @@ top_terms_by_topic_LDA <-
     }
   }
 
+#### Importing data ####
+
 library(readr)
 # Årsak
 årsak <-
   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/årsak.csv")
-spec(årsak)
+readr::spec(årsak)
 
 # Fartøy
 fartøy <-
@@ -140,12 +146,12 @@ fartøy <-
       distanseaptilx = col_character()
     )
   )
-spec(fartøy)
+readr::spec(fartøy)
 
 # Konsekvens
 konsekvens <-
   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/konsekvens.csv")
-spec(konsekvens)
+readr::spec(konsekvens)
 
 # Miljøskade
 miljøskade <-
@@ -153,7 +159,7 @@ miljøskade <-
     "~/Documents/Fritidsbåtplattformen/Delt opp/miljøskade.csv",
     col_types = cols(fnnummer = col_character())
   )
-spec(miljøskade)
+readr::spec(miljøskade)
 
 # Person
 person <-
@@ -161,27 +167,27 @@ person <-
     "~/Documents/Fritidsbåtplattformen/Delt opp/person.csv",
     col_types = cols(pusulykkenummer = col_character(),)
   )
-spec(person)
+readr::spec(person)
 
 # Personskade
 personskade <-
   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/personskade.csv")
-spec(personskade)
+readr::spec(personskade)
 
 # Personverneutstyr
 personverneutstyr <-
   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/personverneutstyr.csv")
-spec(personverneutstyr)
+readr::spec(personverneutstyr)
 
 # Tilrådning
 tilrådning <-
   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/tilrådning.csv")
-spec(tilrådning)
+readr::spec(tilrådning)
 
 # Tilrådningstiltak
 tilrådningstiltak <-
   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/tilrådningstiltak.csv")
-spec(tilrådningstiltak)
+readr::spec(tilrådningstiltak)
 
 # Ulykke
 ulykke <-
@@ -189,17 +195,17 @@ ulykke <-
     "~/Documents/Fritidsbåtplattformen/Delt opp/ulykke.csv",
     col_types = cols(posisjon_breddegrad = col_character())
   )
-spec(ulykke)
+readr::spec(ulykke)
 
 # ÅrsakDetalj
 årsaksdetalj <-
   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/årsaksdetaljer.csv")
-spec(årsaksdetalj)
+readr::spec(årsaksdetalj)
 
 # Commands that might prove useful:
 readr::tokenizer_csv()
 
-#### Descriptive statistics #### 
+#### Descriptive statistics ####
 # Using a colorblind palette for the graphs, so
 # we're importing some colorblind-friendly colors
 safe_colorblind_palette <-
@@ -217,6 +223,8 @@ safe_colorblind_palette <-
     "#6699CC",
     "#888888"
   )
+
+## By year
 
 library(chron)
 ulykke %>%
@@ -245,29 +253,82 @@ ulykke %>%
   labs(
     x = "Year",
     y = "Number of entries per year",
-    title = paste0("Reported accidents in Sdir's dataset. N = ", nrow(ulykke[!is.na(ulykke$ulykkedato), ]
-    ))) +
+    title = paste0("Reported accidents in Sdir's dataset. N = ", nrow(ulykke[!is.na(ulykke$ulykkedato), ]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+
+
+## By month
+month.name <- as.factor(month.name)
+
+ulykke$ulykkesmåned <- str_squish(format(factor(months(
+  as.Date(ulykke$ulykkedato, format = "%d.%m.%Y")
+))))
+ulykke$ulykkesmåned
+
+ulykke %>%
+  mutate(ulykkesmåned = str_squish(format((months(
+    as.Date(ulykkedato, format = "%d.%m.%Y")
+  )))))  %>%
+  count(ulykkesmåned) %>%
+  mutate(ulykkesmåned = factor(ulykkesmåned, levels = month.name)) %>%
+  ggplot(aes(ulykkesmåned, n)) +
+  geom_col() +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title.x = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  scale_y_continuous(breaks = seq(0, 4000, by = 500)) +
+  labs(
+    x = "Month",
+    y = "Number of entries per month",
+    title = paste0(
+      "Reported accidents (1981-2022) in Sdir's dataset. N = ",
+      nrow(ulykke[!is.na(ulykke$ulykkedato), ])
+    )
+  ) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
 #### Stemming or no stemming ####
-tidy_årsak <- årsak_filtered %>%
+tidy_årsak <-   årsak %>%
   unnest_tokens(word, direkteårsak_person_fritekst) %>%
-  anti_join(get_stopwords("no"))
+  anti_join(get_stopwords("no")) %>%
+  anti_join(get_stopwords("en"))
 
-tidy_scotus %>%
+tidy_årsak %>%
   count(word, sort = TRUE)
+
 
 #### Building a regression model ####
 library(tidymodels)
 set.seed(1234)
-ulykke_split <- ulykke %>%
+årsak_split <-   årsak %>%
   mutate(direkteårsak_person_fritekst = str_remove_all(direkteårsak_person_fritekst, "'")) %>%
   initial_split()
 
-ulykke_train <- training(ulykke_split)
-ulykke_test <- testing(ulykke_split)
+årsak_train <- training(årsak_split)
+årsak_test <- testing(årsak_split)
 
+library(textrecipes)
 
+årsak_rec <- recipe( ~ text, data = scotus_train) %>%
+  step_tokenize(text) %>%
+  step_tokenfilter(text, max_tokens = 1e3) %>%
+  step_tfidf(text) %>%
+  step_normalize(all_predictors())
+
+scotus_rec
 
 #### LDA modeling ####
 #### Årsak ####
@@ -295,7 +356,7 @@ norwegian_stop_words <- tibble(word = tm::stopwords(kind = "no"))
   anti_join(custom_stop_words, by = c("term" = "word")) # remove custom stopwords
 
 # reconstruct cleaned documents (so that each word shows up the correct number of times)
-cleaned_documents <-      årsaksDTM_tidy_cleaned %>%
+cleaned_documents <-          årsaksDTM_tidy_cleaned %>%
   group_by(document) %>%
   mutate(terms = toString(rep(term, count))) %>%
   select(document, terms) %>%
@@ -308,11 +369,11 @@ head(cleaned_documents)
 top_terms_by_topic_LDA(cleaned_documents$terms, number_of_topics = 4)
 
 # stem the words (e.g. convert each word to its stem, where applicable)
-årsaksDTM_tidy_cleaned_stem <-      årsaksDTM_tidy_cleaned %>%
+årsaksDTM_tidy_cleaned_stem <-          årsaksDTM_tidy_cleaned %>%
   mutate(stem = wordStem(term))
 
 # reconstruct our documents
-cleaned_documents_stem <-      årsaksDTM_tidy_cleaned_stem %>%
+cleaned_documents_stem <-          årsaksDTM_tidy_cleaned_stem %>%
   group_by(document) %>%
   mutate(terms = toString(rep(stem, count))) %>%
   select(document, terms) %>%
@@ -321,4 +382,116 @@ cleaned_documents_stem <-      årsaksDTM_tidy_cleaned_stem %>%
 # now let's look at the new most informative terms
 top_terms_by_topic_LDA(cleaned_documents_stem$terms, number_of_topics = 4)
 
+#### Modeling ####
+
+# Concenating the free text fields, most of which are from årsak. Missing one
+# from årsaksdetalj, fritekst.
+
+årsak <- årsak %>%
+  pivot_longer(
+    cols = c(direkteårsak_person_fritekst,
+             direkteårsak_ytre_fritekst,
+             direkteårsak_utstyr_fritekst,
+             indirekteårsak_person_fritekst,
+             indirekteårsak_arbeidsmiljø_fritekst,
+             indirekteårsak_ytre_fritekst,
+             indirekteårsak_utstyr_fritekst,
+             bakenforårsak_ledelse_fritekst,
+             bakenforårsak_prosedyre_fritekst),
+    values_drop_na = TRUE
+  ) %>%
+  group_by(årsak_id) %>%
+  summarise(ALL = toString(unique(value))) %>%
+  left_join(årsak)
+
+
+# Based in the årsak data set, how well can we predict the amount of dead or
+# injured people?
+årsak_dataset <-
+  inner_join(årsak, årsaksdetalj, ulykke, by = 'årsak_id')
+fartøy_dataset <-
+  full_join(fartøy, konsekvens, miljøskade, by = 'fartøy_id')
+person_dataset <-
+  full_join(personskade, personverneutstyr, ulykke, by = 'person_id')
+tilrådning_dataset <-
+  full_join(tilrådning, tilrådningstiltak, by = 'tilrådning_id')
+
+full_data <-
+  inner_join(årsak_dataset, fartøy, ulykke, by = 'ulykke_id')
+
+personskade$person_id.x <- personskade$person_id
+personskade$person_id.y <- personskade$person_id
+
+full_data <-
+  inner_join(full_data, personskade, by = c('person_id.x', 'person_id.y'))
+
+#### Creating the text variables ####
+
+# Freetext causes
+
+# full_data <- full_data %>%
+#   mutate(
+#     freetext = paste(
+#       direkteårsak_person_fritekst,
+#       direkteårsak_ytre_fritekst,
+#       direkteårsak_utstyr_fritekst,
+#       indirekteårsak_person_fritekst,
+#       indirekteårsak_arbeidsmiljø_fritekst,
+#       indirekteårsak_ytre_fritekst,
+#       indirekteårsak_utstyr_fritekst,
+#       bakenforårsak_ledelse_fritekst,
+#       bakenforårsak_prosedyre_fritekst,
+#       fritekst
+#     , sep = " //// ")
+#
+#   ) %>%
+#   mutate(freetext = str_squish(str_remove_all(freetext, pattern = "NA")))
+
+full_data <- full_data %>%
+  pivot_longer(
+    cols = c(direkteårsak_person_fritekst,
+    direkteårsak_ytre_fritekst,
+    direkteårsak_utstyr_fritekst,
+    indirekteårsak_person_fritekst,
+    indirekteårsak_arbeidsmiljø_fritekst,
+    indirekteårsak_ytre_fritekst,
+    indirekteårsak_utstyr_fritekst,
+    bakenforårsak_ledelse_fritekst,
+    bakenforårsak_prosedyre_fritekst,
+    fritekst),
+    values_drop_na = TRUE
+  ) %>%
+  group_by(person_id) %>%
+  summarise(ALL = toString(unique(value))) %>%
+  left_join(full_data)
+
+length(table(full_data$ALL))
+# 2099
+
+length(table(full_data$direkteårsak_person_fritekst))
+length(table(full_data$direkteårsak_ytre_fritekst))
+length(table(full_data$direkteårsak_utstyr_fritekst))
+length(table(full_data$indirekteårsak_person_fritekst))
+length(table(full_data$indirekteårsak_arbeidsmiljø_fritekst))
+length(table(full_data$indirekteårsak_ytre_fritekst))
+length(table(full_data$indirekteårsak_utstyr_fritekst))
+length(table(full_data$bakenforårsak_ledelse_fritekst))
+length(table(full_data$bakenforårsak_prosedyre_fritekst))
+
+
 #### tf_idf ####
+
+a <-
+  c(
+    årsak,
+    årsaksdetalj,
+    fartøy,
+    'konsekvens',
+    'miljøskade',
+    person,
+    'personskade',
+    personverneutstyr,
+    tilrådning,
+    tilrådningstiltak,
+    ulykke
+  )
