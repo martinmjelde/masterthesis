@@ -34,6 +34,10 @@ if (!require("randomForest"))
   install.packages("randomForest")
 library(randomForest) # Algorithm called RandomForest, a regression and classification algorithm
 
+if (!require("ranger"))
+  install.packages("ranger")
+library(ranger) # additional workflow functions with random forests
+
 if (!require("caret"))
   install.packages("caret")
 library(caret) # Machine learning training and application
@@ -114,6 +118,57 @@ top_terms_by_topic_LDA <-
       return(top_terms)
     }
   }
+
+top_terms_by_topic_tfidf <- function(text_df, text_column, group_column, plot = T){
+  # name for the column we're going to unnest_tokens_ to
+  # (you only need to worry about enquo stuff if you're
+  # writing a function using using tidyverse packages)
+  group_column <- enquo(group_column)
+  text_column <- enquo(text_column)
+  
+  # get the count of each word in each review
+  words <- text_df %>%
+    unnest_tokens(word, !!text_column) %>%
+    count(!!group_column, word) %>% 
+    ungroup()
+  
+  # get the number of words per text
+  total_words <- words %>% 
+    group_by(!!group_column) %>% 
+    summarize(total = sum(n))
+  
+  # combine the two dataframes we just made
+  words <- left_join(words, total_words)
+  
+  # get the tf_idf & order the words by degree of relevence
+  tf_idf <- words %>%
+    bind_tf_idf(word, !!group_column, n) %>%
+    select(-total) %>%
+    arrange(desc(tf_idf)) %>%
+    mutate(word = factor(word, levels = rev(unique(word))))
+  
+  if(plot == T){
+    # convert "group" into a quote of a name
+    # (this is due to funkiness with calling ggplot2
+    # in functions)
+    group_name <- quo_name(group_column)
+    
+    # plot the 10 most informative terms per topic
+    tf_idf %>% 
+      group_by(!!group_column) %>% 
+      top_n(10) %>% 
+      ungroup %>%
+      ggplot(aes(word, tf_idf, fill = as.factor(group_name))) +
+      geom_col(show.legend = FALSE) +
+      labs(x = NULL, y = "tf-idf") +
+      facet_wrap(reformulate(group_name), scales = "free") +
+      coord_flip()
+  }else{
+    # return the entire tf_idf dataframe
+    return(tf_idf)
+  }
+}
+
 
 #### Importing data ####
 
@@ -300,42 +355,208 @@ ulykke %>%
   ) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
+#### Creating a new variable of free text fields ####
+
+# Concenating the free text fields, most of which are from årsak.
+
+årsak_with_detail <- full_join(x = årsak, y = årsaksdetalj, by = "årsak_id", keep = T)
+årsak_with_detail$årsak_id <- årsak_with_detail$årsak_id.x
+
+årsak_with_detail <- årsak_with_detail %>%
+  pivot_longer(
+    cols = c(direkteårsak_person_fritekst,
+             direkteårsak_ytre_fritekst,
+             direkteårsak_utstyr_fritekst,
+             indirekteårsak_person_fritekst,
+             indirekteårsak_arbeidsmiljø_fritekst,
+             indirekteårsak_ytre_fritekst,
+             indirekteårsak_utstyr_fritekst,
+             bakenforårsak_ledelse_fritekst,
+             bakenforårsak_prosedyre_fritekst, 
+             fritekst),
+    values_drop_na = TRUE
+  ) %>%
+  group_by(årsak_id) %>%
+  summarise(ALL = toString(unique(value))) %>%
+  left_join(årsak)
+
+full_data <- full_join(x = årsak_with_detail, y = ulykke, by = 'ulykke_id', keep = T)
+
 #### Stemming or no stemming ####
-tidy_årsak <-   årsak %>%
-  unnest_tokens(word, direkteårsak_person_fritekst) %>%
+tidy_full <-   full_data %>%
+  unnest_tokens(word, ALL) %>%
   anti_join(get_stopwords("no")) %>%
   anti_join(get_stopwords("en"))
 
-tidy_årsak %>%
+tidy_full %>%
   count(word, sort = TRUE)
 
 
 #### Building a regression model ####
+# From chapter 6 https://smltar.com/mlregression.html#firstmlregression
+
 library(tidymodels)
 set.seed(1234)
-årsak_split <-   årsak %>%
-  mutate(direkteårsak_person_fritekst = str_remove_all(direkteårsak_person_fritekst, "'")) %>%
+full_data_split <-   full_data %>%
+  mutate(ALL = str_remove_all(ALL, "'")) %>%
   initial_split()
 
-årsak_train <- training(årsak_split)
-årsak_test <- testing(årsak_split)
+full_data_train <- training(full_data_split)
+full_data_test <- testing(full_data_split)
 
 library(textrecipes)
 
-årsak_rec <- recipe( ~ text, data = scotus_train) %>%
-  step_tokenize(text) %>%
-  step_tokenfilter(text, max_tokens = 1e3) %>%
-  step_tfidf(text) %>%
+full_data_rec <- recipe(antall_skadet ~ ALL, data = full_data_train) %>%
+  step_tokenize(ALL) %>%
+  step_tokenfilter(ALL, max_tokens = 1e3) %>%
+  step_tfidf(ALL) %>%
   step_normalize(all_predictors())
 
-scotus_rec
+full_data_rec
+
+full_data_prep <- prep(full_data_rec)
+full_data_bake <- bake(full_data_prep, new_data = NULL)
+
+dim(full_data_bake)
+
+# Creating a workflow
+
+full_data_wf <- workflow() %>%
+  add_recipe(full_data_rec)
+
+full_data_wf
+
+svm_spec <- svm_linear() %>%
+  set_mode("regression") %>%
+  set_engine("LiblineaR")
+
+
+svm_fit <- full_data_wf %>%
+  add_model(svm_spec) %>%
+  fit(data = full_data_train)
+
+# Extracting results
+
+svm_fit %>%
+  pull_workflow_fit() %>%
+  tidy() %>%
+  arrange(-estimate)
+
+# The term Bias here means the same thing as an intercept. We see here what
+# terms contribute to a Supreme Court opinion being written more recently, like
+# “appeals” and “petitioner.”
+
+svm_fit %>%
+  pull_workflow_fit() %>%
+  tidy() %>%
+  arrange(estimate)
+
+# Creating folds to validate 
+
+set.seed(123)
+full_data_folds <- vfold_cv(full_data_train)
+
+full_data_folds
+
+# Resampling - rs = resample here
+
+set.seed(123)
+svm_rs <- fit_resamples(
+  full_data_wf %>% add_model(svm_spec),
+  full_data_folds,
+  control = control_resamples(save_pred = TRUE)
+)
+
+svm_rs
+
+collect_metrics(svm_rs)
+
+svm_rs %>%
+  collect_predictions() %>%
+  ggplot(aes(antall_skadet, .pred, color = id)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_point(alpha = 0.3) +
+  labs(
+    x = "Actual number of injured",
+    y = "Predicted number of injured",
+    color = NULL,
+    title = "Predicted and true years for Supreme Court opinions",
+    subtitle = "Each cross-validation fold is shown in a different color"
+  )
+
+# Removing the outlier #10
+
+svm_rs %>%
+  collect_predictions() %>%
+  ggplot(aes(antall_skadet, .pred, color = id)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_point(alpha = 0.3) +
+  labs(
+    x = "Actual number of injured",
+    y = "Predicted number of injured",
+    color = NULL,
+    title = "Predicted and true years for Supreme Court opinions",
+    subtitle = "Each cross-validation fold is shown in a different color"
+  ) +
+  xlim(0, 22)
+
+
+# Compare to null model
+
+null_regression <- null_model() %>%
+  set_engine("parsnip") %>%
+  set_mode("regression")
+
+null_rs <- fit_resamples(
+  full_data_wf %>% add_model(null_regression),
+  full_data_folds,
+  metrics = metric_set(rmse)
+)
+
+null_rs
+
+# Remember that this is using unigrams, but it is in fact worse.
+
+collect_metrics(null_rs)
+
+
+# Compare to random forest
+
+rf_spec <- rand_forest(trees = 1000) %>%
+  set_engine("ranger") %>%
+  set_mode("regression")
+
+rf_spec
+
+library(ranger)
+
+rf_rs <- fit_resamples(
+  full_data_wf %>% add_model(rf_spec),
+  full_data_folds,
+  control = control_resamples(save_pred = TRUE)
+)
+
+collect_metrics(rf_rs)
+
+collect_predictions(rf_rs) %>%
+  ggplot(aes(antall_skadet, .pred, color = id)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_point(alpha = 0.3) +
+  labs(
+    x = "Actual number of injured",
+    y = "Predicted number of injured",
+    color = NULL,
+    title = paste("Predicted and true number of injured people using \n",
+                  "a random forest model", sep = "\n"),
+    subtitle = "Each cross-validation fold is shown in a different color"
+  )
 
 #### LDA modeling ####
 #### Årsak ####
 
 # We create a term matrix we can clean up
 årsaksCorpus_ <-
-  Corpus(VectorSource(removePunctuation(årsak$direkteårsak_person_fritekst)))
+  Corpus(VectorSource(removePunctuation(årsak$ALL)))
 årsaksDTM <- DocumentTermMatrix(årsaksCorpus_)
 
 # convert the document term matrix to a tidytext corpus
@@ -384,46 +605,67 @@ top_terms_by_topic_LDA(cleaned_documents_stem$terms, number_of_topics = 4)
 
 #### Modeling ####
 
-# Concenating the free text fields, most of which are from årsak. Missing one
-# from årsaksdetalj, fritekst.
-
-årsak <- årsak %>%
-  pivot_longer(
-    cols = c(direkteårsak_person_fritekst,
-             direkteårsak_ytre_fritekst,
-             direkteårsak_utstyr_fritekst,
-             indirekteårsak_person_fritekst,
-             indirekteårsak_arbeidsmiljø_fritekst,
-             indirekteårsak_ytre_fritekst,
-             indirekteårsak_utstyr_fritekst,
-             bakenforårsak_ledelse_fritekst,
-             bakenforårsak_prosedyre_fritekst),
-    values_drop_na = TRUE
-  ) %>%
-  group_by(årsak_id) %>%
-  summarise(ALL = toString(unique(value))) %>%
-  left_join(årsak)
 
 
 # Based in the årsak data set, how well can we predict the amount of dead or
 # injured people?
 årsak_dataset <-
-  inner_join(årsak, årsaksdetalj, ulykke, by = 'årsak_id')
+  left_join(ulykke, årsak, årsaksdetalj, by = 'ulykke_id')
+
 fartøy_dataset <-
   full_join(fartøy, konsekvens, miljøskade, by = 'fartøy_id')
+
 person_dataset <-
   full_join(personskade, personverneutstyr, ulykke, by = 'person_id')
+
 tilrådning_dataset <-
   full_join(tilrådning, tilrådningstiltak, by = 'tilrådning_id')
 
 full_data <-
-  inner_join(årsak_dataset, fartøy, ulykke, by = 'ulykke_id')
+  left_join(årsak_dataset, fartøy, personskade, by = 'ulykke_id')
 
 personskade$person_id.x <- personskade$person_id
 personskade$person_id.y <- personskade$person_id
 
 full_data <-
-  inner_join(full_data, personskade, by = c('person_id.x', 'person_id.y'))
+  left_join(full_data, personskade, by = c('person_id.x', 'person_id.y'))
+
+
+#### n-grams ####
+# not finished
+
+# get just the tf-idf output for the type of vehicles
+tfidf_bygroup_direkteårsak <- top_terms_by_topic_tfidf(text_df = årsak, 
+                                                  text_column = ALL, 
+                                                  group = direkte_årsak, 
+                                                  plot = F)
+
+# do our own plotting
+reviews_tfidf_byHotel  %>% 
+  group_by(hotel) %>% 
+  top_n(5) %>% 
+  ungroup %>%
+  ggplot(aes(word, tf_idf, fill = hotel)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~hotel, ncol = 4, scales = "free", ) +
+  coord_flip()
+
+
+årsak %>% 
+  unnest_tokens(word, text, token = "ngrams", n = 2) %>% 
+  separate(word, c("word1", "word2"), sep = " ") %>% 
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>% 
+  unite(word, word1, word2, sep = " ") %>% 
+  count(word, sort = TRUE) %>% 
+  slice(1:10) %>% 
+  ggplot() + geom_bar(aes(word, n), stat = "identity", fill = "#de5833") +
+  theme_minimal() +
+  coord_flip() +
+  labs(title = "Top Bigrams of Hotel Reviews",
+       subtitle = "using Tidytext in R",
+       caption = "Data Source: kaggle.com/rtatman")
 
 #### Creating the text variables ####
 
@@ -481,17 +723,3 @@ length(table(full_data$bakenforårsak_prosedyre_fritekst))
 
 #### tf_idf ####
 
-a <-
-  c(
-    årsak,
-    årsaksdetalj,
-    fartøy,
-    'konsekvens',
-    'miljøskade',
-    person,
-    'personskade',
-    personverneutstyr,
-    tilrådning,
-    tilrådningstiltak,
-    ulykke
-  )
