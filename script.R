@@ -179,48 +179,51 @@ library(readr)
 readr::spec(årsak)
 
 # Fartøy
-fartøy <-
-  read_csv(
-    "~/Documents/Fritidsbåtplattformen/Delt opp/fartøy.csv",
-    col_types = cols(
-      imonr = col_character(),
-      bruttotonnasje = col_character(),
-      sikkerhetstonnasje = col_character(),
-      bredde = col_character(),
-      lengde_loa = col_character(),
-      lengde_lpp = col_character(),
-      sisteombygningsår = col_character(),
-      fartsområde_kode = col_character(),
-      hinkode = col_character(),
-      ulykkested_kode = col_character(),
-      fartøyhastighet = col_character(),
-      sjøkart_kode = col_character(),
-      lastingprosent = col_character(),
-      skrogposisjon_kode = col_character(),
-      skrogskadehøydebunn = col_character(),
-      distanseaptilx = col_character()
-    )
-  )
-readr::spec(fartøy)
+# fartøy <-
+#   read_csv(
+#     "~/Documents/Fritidsbåtplattformen/Delt opp/fartøy.csv",
+#     col_types = cols(
+#       imonr = col_character(),
+#       bruttotonnasje = col_character(),
+#       sikkerhetstonnasje = col_character(),
+#       bredde = col_character(),
+#       lengde_loa = col_character(),
+#       lengde_lpp = col_character(),
+#       sisteombygningsår = col_character(),
+#       fartsområde_kode = col_character(),
+#       hinkode = col_character(),
+#       ulykkested_kode = col_character(),
+#       fartøyhastighet = col_character(),
+#       sjøkart_kode = col_character(),
+#       lastingprosent = col_character(),
+#       skrogposisjon_kode = col_character(),
+#       skrogskadehøydebunn = col_character(),
+#       distanseaptilx = col_character()
+#     )
+#   )
+# readr::spec(fartøy)
 
 # Konsekvens
-konsekvens <-
-  read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/konsekvens.csv")
-readr::spec(konsekvens)
+# konsekvens <-
+#   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/konsekvens.csv")
+# readr::spec(konsekvens)
 
 # Miljøskade
-miljøskade <-
-  read_csv(
-    "~/Documents/Fritidsbåtplattformen/Delt opp/miljøskade.csv",
-    col_types = cols(fnnummer = col_character())
-  )
-readr::spec(miljøskade)
+# miljøskade <-
+#   read_csv(
+#     "~/Documents/Fritidsbåtplattformen/Delt opp/miljøskade.csv",
+#     col_types = cols(fnnummer = col_character())
+#   )
+# readr::spec(miljøskade)
 
 # Person
 person <-
   read_csv(
     "~/Documents/Fritidsbåtplattformen/Delt opp/person.csv",
-    col_types = cols(pusulykkenummer = col_character(),)
+    col_types = cols(pusulykkenummer = col_character(),
+                     yrkeskodefisker = col_character(),
+                     yrkeskodefisker_kode = col_character()
+                     )
   )
 readr::spec(person)
 
@@ -235,9 +238,9 @@ personverneutstyr <-
 readr::spec(personverneutstyr)
 
 # Tilrådning
-tilrådning <-
-  read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/tilrådning.csv")
-readr::spec(tilrådning)
+# tilrådning <-
+#   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/tilrådning.csv")
+# readr::spec(tilrådning)
 
 # Tilrådningstiltak
 tilrådningstiltak <-
@@ -280,8 +283,11 @@ safe_colorblind_palette <-
   )
 
 ## By year
-
 library(chron)
+
+a <- mean(table(format(years(
+  as.Date(ulykke$ulykkedato, format = "%d.%m.%Y")))))
+
 ulykke %>%
   mutate(ulykkesår = format((years(
     as.Date(ulykkedato, format = "%d.%m.%Y")
@@ -305,6 +311,7 @@ ulykke %>%
     legend.position = "bottom"
   ) +
   scale_y_continuous(breaks = seq(0, 2000, by = 250)) +
+  geom_hline(yintercept = a) +
   labs(
     x = "Year",
     y = "Number of entries per year",
@@ -312,7 +319,7 @@ ulykke %>%
   ) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
-
+rm(a)
 ## By month
 month.name <- as.factor(month.name)
 
@@ -320,6 +327,8 @@ ulykke$ulykkesmåned <- str_squish(format(factor(months(
   as.Date(ulykke$ulykkedato, format = "%d.%m.%Y")
 ))))
 ulykke$ulykkesmåned
+a <- mean(table(ulykke$ulykkesmåned))
+
 
 ulykke %>%
   mutate(ulykkesmåned = str_squish(format((months(
@@ -345,6 +354,7 @@ ulykke %>%
     legend.position = "bottom"
   ) +
   scale_y_continuous(breaks = seq(0, 4000, by = 500)) +
+  geom_hline(yintercept = a)+
   labs(
     x = "Month",
     y = "Number of entries per month",
@@ -354,6 +364,9 @@ ulykke %>%
     )
   ) +
   scale_fill_manual(values = c(safe_colorblind_palette))
+
+# I just added it manually. Might create a prettier solution later.
+rm(a)
 
 #### Creating a new variable of free text fields ####
 
@@ -382,7 +395,7 @@ ulykke %>%
 
 full_data <- full_join(x = årsak_with_detail, y = ulykke, by = 'ulykke_id', keep = T)
 
-#### Stemming or no stemming ####
+#### Stemming/stopwords or not? ####
 tidy_full <-   full_data %>%
   unnest_tokens(word, ALL) %>%
   anti_join(get_stopwords("no")) %>%
@@ -391,6 +404,9 @@ tidy_full <-   full_data %>%
 tidy_full %>%
   count(word, sort = TRUE)
 
+full_data %>%
+  unnest_tokens(word, ALL) %>%
+  count(word, sort = TRUE)
 
 #### Building a regression model ####
 # From chapter 6 https://smltar.com/mlregression.html#firstmlregression
@@ -406,8 +422,11 @@ full_data_test <- testing(full_data_split)
 
 library(textrecipes)
 
+# We can add more predictors here, such as
+
 full_data_rec <- recipe(antall_skadet ~ ALL, data = full_data_train) %>%
   step_tokenize(ALL) %>%
+  step_stopwords(language = "no", custom_stopword_source = norwegian_stop_words) %>%
   step_tokenfilter(ALL, max_tokens = 1e3) %>%
   step_tfidf(ALL) %>%
   step_normalize(all_predictors())
@@ -443,8 +462,7 @@ svm_fit %>%
   arrange(-estimate)
 
 # The term Bias here means the same thing as an intercept. We see here what
-# terms contribute to a Supreme Court opinion being written more recently, like
-# “appeals” and “petitioner.”
+# terms contribute to a rescue mission having more injured
 
 svm_fit %>%
   pull_workflow_fit() %>%
@@ -480,25 +498,25 @@ svm_rs %>%
     x = "Actual number of injured",
     y = "Predicted number of injured",
     color = NULL,
-    title = "Predicted and true years for Supreme Court opinions",
+    title = "Predicted and true number of injured",
     subtitle = "Each cross-validation fold is shown in a different color"
   )
 
 # Removing the outlier #10
 
-svm_rs %>%
-  collect_predictions() %>%
-  ggplot(aes(antall_skadet, .pred, color = id)) +
-  geom_abline(lty = 2, color = "gray80", size = 1.5) +
-  geom_point(alpha = 0.3) +
-  labs(
-    x = "Actual number of injured",
-    y = "Predicted number of injured",
-    color = NULL,
-    title = "Predicted and true years for Supreme Court opinions",
-    subtitle = "Each cross-validation fold is shown in a different color"
-  ) +
-  xlim(0, 22)
+# svm_rs %>%
+#   collect_predictions() %>%
+#   ggplot(aes(antall_skadet, .pred, color = id)) +
+#   geom_abline(lty = 2, color = "gray80", size = 1.5) +
+#   geom_point(alpha = 0.3) +
+#   labs(
+#     x = "Actual number of injured",
+#     y = "Predicted number of injured",
+#     color = NULL,
+#     title = "Predicted and true years for Supreme Court opinions",
+#     subtitle = "Each cross-validation fold is shown in a different color"
+#   ) +
+#   xlim(0, 22)
 
 
 # Compare to null model
@@ -515,14 +533,17 @@ null_rs <- fit_resamples(
 
 null_rs
 
-# Remember that this is using unigrams, but it is in fact worse.
+# Remember that this is using unigrams, but it is in fact worse than the null
+# model
 
 collect_metrics(null_rs)
 
 
 # Compare to random forest
 
-rf_spec <- rand_forest(trees = 1000) %>%
+# Changing from 1000 to 100 trees due to the time it took the calculations
+
+rf_spec <- rand_forest(trees = 100) %>%
   set_engine("ranger") %>%
   set_mode("regression")
 
@@ -546,8 +567,7 @@ collect_predictions(rf_rs) %>%
     x = "Actual number of injured",
     y = "Predicted number of injured",
     color = NULL,
-    title = paste("Predicted and true number of injured people using \n",
-                  "a random forest model", sep = "\n"),
+    title = "Predicted and true number of injured people using, a random forest model",
     subtitle = "Each cross-validation fold is shown in a different color"
   )
 
