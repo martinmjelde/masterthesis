@@ -109,6 +109,7 @@ top_terms_by_topic_LDA <-
         mutate(term = reorder(term, beta)) %>% # sort terms by beta value
         ggplot(aes(term, beta, fill = factor(topic))) + # plot beta by theme
         geom_col(show.legend = FALSE) + # as a bar plot
+        theme_bw() + 
         facet_wrap( ~ topic, scales = "free") + # which each topic in a seperate plot
         labs(x = NULL, y = "Beta") + # no x label, change y label
         coord_flip() # turn bars sideways
@@ -160,6 +161,7 @@ top_terms_by_topic_tfidf <- function(text_df, text_column, group_column, plot = 
       ungroup %>%
       ggplot(aes(word, tf_idf, fill = as.factor(group_name))) +
       geom_col(show.legend = FALSE) +
+      theme_bw() +
       labs(x = NULL, y = "tf-idf") +
       facet_wrap(reformulate(group_name), scales = "free") +
       coord_flip()
@@ -282,8 +284,84 @@ safe_colorblind_palette <-
     "#888888"
   )
 
+#### Creating a new variable of free text fields ####
+
+# Concenating the free text fields, most of which are from årsak.
+
+årsak_with_detail <- full_join(x = årsak, y = årsaksdetalj, by = "årsak_id", keep = T)
+årsak_with_detail$årsak_id <- årsak_with_detail$årsak_id.x
+
+# Using full_join, all values that exist in either dataset x or y is included.
+
+årsak_with_detail <- årsak_with_detail %>%
+  pivot_longer(
+    cols = c(direkteårsak_person_fritekst,
+             direkteårsak_ytre_fritekst,
+             direkteårsak_utstyr_fritekst,
+             indirekteårsak_person_fritekst,
+             indirekteårsak_arbeidsmiljø_fritekst,
+             indirekteårsak_ytre_fritekst,
+             indirekteårsak_utstyr_fritekst,
+             bakenforårsak_ledelse_fritekst,
+             bakenforårsak_prosedyre_fritekst, 
+             fritekst),
+    values_drop_na = TRUE
+  ) %>%
+  group_by(årsak_id) %>%
+  summarise(ALL = toString(unique(value))) %>%
+  full_join(årsak)
+
+# Add hendelsesforløp
+full_data <- full_join(x = årsak_with_detail, y = ulykke, by = 'ulykke_id', keep = TRUE)
+
+full_data$ulykke_id <- full_data$ulykke_id.x
+
+# Continue here, add person$personskade and keep uniques
+
+full_data <- full_data %>%
+  pivot_longer(
+    cols = c(hendelsesforløp, 
+             ALL),
+    values_drop_na = TRUE
+  ) %>%
+  group_by(ulykke_id) %>% 
+  summarise(ALL = toString(unique(value))) %>%
+  full_join(full_data)
+
+full_data <- full_join(x = full_data, y = person, by = 'person_id', keep = TRUE)
+
+full_data$ulykke_id <- full_data$ulykke_id.x
+
+full_data <- full_data %>%
+  pivot_longer(
+    cols = c(personskade, 
+             ALL),
+    values_drop_na = TRUE
+  ) %>%
+  group_by(ulykke_id) %>% 
+  summarise(ALL = toString(unique(value))) %>%
+  full_join(full_data)
+
+
+full_data$person_id <- full_data$person_id.x
+
+full_data <- full_join(x = full_data, y = personskade, by = 'person_id', keep = TRUE)
+
+full_data <- full_data %>%
+  pivot_longer(
+    cols = c(annenskade, 
+             ALL),
+    values_drop_na = TRUE
+  ) %>%
+  group_by(ulykke_id) %>% 
+  summarise(ALL = toString(unique(value))) %>%
+  full_join(full_data)
+
 ## By year
 library(chron)
+
+a <- mean(table(format(years(
+  as.Date(ulykke$ulykkedato, format = "%d.%m.%Y")))))
 
 a <- mean(table(format(years(
   as.Date(ulykke$ulykkedato, format = "%d.%m.%Y")))))
@@ -310,8 +388,9 @@ ulykke %>%
     axis.title = element_text(size = 10),
     legend.position = "bottom"
   ) +
+  geom_hline(yintercept = a, color = safe_colorblind_palette[2]) +
+  geom_label(aes(x = 1, y = a, label = paste("Mean =", round(a))), nudge_x = 3.1, nudge_y = 50, size = 5, family = "Times")+
   scale_y_continuous(breaks = seq(0, 2000, by = 250)) +
-  geom_hline(yintercept = a) +
   labs(
     x = "Year",
     y = "Number of entries per year",
@@ -320,17 +399,18 @@ ulykke %>%
   scale_fill_manual(values = c(safe_colorblind_palette))
 
 rm(a)
+
 ## By month
 month.name <- as.factor(month.name)
 
-ulykke$ulykkesmåned <- str_squish(format(factor(months(
-  as.Date(ulykke$ulykkedato, format = "%d.%m.%Y")
+full_data$ulykkesmåned <- str_squish(format(factor(months(
+  as.Date(full_data$ulykkedato, format = "%d.%m.%Y")
 ))))
-ulykke$ulykkesmåned
-a <- mean(table(ulykke$ulykkesmåned))
+full_data$ulykkesmåned
+a <- mean(table(full_data$ulykkesmåned))
 
 
-ulykke %>%
+full_data %>%
   mutate(ulykkesmåned = str_squish(format((months(
     as.Date(ulykkedato, format = "%d.%m.%Y")
   )))))  %>%
@@ -353,14 +433,15 @@ ulykke %>%
     axis.title = element_text(size = 10),
     legend.position = "bottom"
   ) +
-  scale_y_continuous(breaks = seq(0, 4000, by = 500)) +
+  #scale_y_continuous(breaks = seq(0, 4000, by = 500)) +
   geom_hline(yintercept = a)+
+  geom_label(aes(x = 0, y = a, label = paste("Mean =", round(a))), nudge_x = 6.5, nudge_y = 110, size = 5, family = "Times")+
   labs(
     x = "Month",
     y = "Number of entries per month",
     title = paste0(
       "Reported accidents (1981-2022) in Sdir's dataset. N = ",
-      nrow(ulykke[!is.na(ulykke$ulykkedato), ])
+      nrow(full_data[!is.na(full_data$ulykkedato), ])
     )
   ) +
   scale_fill_manual(values = c(safe_colorblind_palette))
@@ -368,32 +449,95 @@ ulykke %>%
 # I just added it manually. Might create a prettier solution later.
 rm(a)
 
-#### Creating a new variable of free text fields ####
+# How many injured and dead
 
-# Concenating the free text fields, most of which are from årsak.
+ulykke %>% 
+  count(antall_skadet) %>%
+  ggplot(aes(antall_skadet, n))+
+  geom_col()+
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title.x = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  labs(
+    x = "Injured people per accident report",
+    y = "Count",
+    title = "Frequency of injured people from each report"
+  ) +
+  scale_x_continuous(breaks = seq(0, 75, by = 5)) +
+  geom_text(aes(label = n), nudge_y = 1000, nudge_x = -0.2, angle = 90, size = 3)+
+  scale_fill_manual(values = c(safe_colorblind_palette))
+  
+# Only deceased
 
-årsak_with_detail <- full_join(x = årsak, y = årsaksdetalj, by = "årsak_id", keep = T)
-årsak_with_detail$årsak_id <- årsak_with_detail$årsak_id.x
+ulykke %>% 
+  count(antall_omkommet) %>%
+  ggplot(aes(antall_omkommet, n, label = antall_omkommet))+
+  geom_col()+
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title.x = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  labs(
+    x = "Number of deceased people",
+    y = "Count",
+    title = "Distribution of deceased people from each report"
+  ) +
+  scale_x_continuous(breaks = seq(0, 20, by = 1)) +
+  geom_text(aes(label = n), nudge_y = 600)+
+  scale_fill_manual(values = c(safe_colorblind_palette))
 
-årsak_with_detail <- årsak_with_detail %>%
-  pivot_longer(
-    cols = c(direkteårsak_person_fritekst,
-             direkteårsak_ytre_fritekst,
-             direkteårsak_utstyr_fritekst,
-             indirekteårsak_person_fritekst,
-             indirekteårsak_arbeidsmiljø_fritekst,
-             indirekteårsak_ytre_fritekst,
-             indirekteårsak_utstyr_fritekst,
-             bakenforårsak_ledelse_fritekst,
-             bakenforårsak_prosedyre_fritekst, 
-             fritekst),
-    values_drop_na = TRUE
-  ) %>%
-  group_by(årsak_id) %>%
-  summarise(ALL = toString(unique(value))) %>%
-  left_join(årsak)
+ulykke %>% 
+  mutate(antall_antatt_døde = as.numeric(antall_savnet) + as.numeric(antall_omkommet)) %>%
+  count(antall_antatt_døde) %>%
+  ggplot(aes(antall_antatt_døde, n))+
+  geom_col()+
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title.x = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  labs(
+    x = "Number of deceased or missing",
+    y = "Count",
+    title = "Distribution of deceased or missing people from each report"
+  ) +
+  scale_x_continuous(breaks = seq(0, 20, by = 1)) +
+  geom_text(aes(label = n), nudge_y = 500)+
+  scale_fill_manual(values = c(safe_colorblind_palette))
 
-full_data <- full_join(x = årsak_with_detail, y = ulykke, by = 'ulykke_id', keep = T)
 
 #### Stemming/stopwords or not? ####
 tidy_full <-   full_data %>%
@@ -498,25 +642,27 @@ svm_rs %>%
     x = "Actual number of injured",
     y = "Predicted number of injured",
     color = NULL,
-    title = "Predicted and true number of injured",
+    title = "Predicted and true number of injured, linear SVM",
     subtitle = "Each cross-validation fold is shown in a different color"
-  )
+  )+
+  theme_bw()
 
 # Removing the outlier #10
 
-# svm_rs %>%
-#   collect_predictions() %>%
-#   ggplot(aes(antall_skadet, .pred, color = id)) +
-#   geom_abline(lty = 2, color = "gray80", size = 1.5) +
-#   geom_point(alpha = 0.3) +
-#   labs(
-#     x = "Actual number of injured",
-#     y = "Predicted number of injured",
-#     color = NULL,
-#     title = "Predicted and true years for Supreme Court opinions",
-#     subtitle = "Each cross-validation fold is shown in a different color"
-#   ) +
-#   xlim(0, 22)
+svm_rs %>%
+  collect_predictions() %>%
+  ggplot(aes(antall_skadet, .pred, color = id)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_point(alpha = 0.3) +
+  labs(
+    x = "Actual number of injured",
+    y = "Predicted number of injured",
+    color = NULL,
+    title = "Predicted and true number of injured, linear SVM",
+    subtitle = "Each cross-validation fold is shown in a different color"
+  ) +
+  theme_bw()+
+  xlim(0, 22)
 
 
 # Compare to null model
@@ -542,14 +688,16 @@ collect_metrics(null_rs)
 # Compare to random forest
 
 # Changing from 1000 to 100 trees due to the time it took the calculations
+library(ranger)
 
 rf_spec <- rand_forest(trees = 100) %>%
   set_engine("ranger") %>%
   set_mode("regression")
 
 rf_spec
-
-library(ranger)
+rf_spec_rfengine <- rand_forest(trees = 100) %>%
+  set_engine("randomForest") %>%
+  set_mode("regression")
 
 rf_rs <- fit_resamples(
   full_data_wf %>% add_model(rf_spec),
@@ -568,19 +716,21 @@ collect_predictions(rf_rs) %>%
     y = "Predicted number of injured",
     color = NULL,
     title = "Predicted and true number of injured people using, a random forest model",
-    subtitle = "Each cross-validation fold is shown in a different color"
-  )
+    subtitle = "Each cross-validation fold is shown in a different color, using 1000 trees"
+  )+
+  xlim(0,22)+
+  theme_bw()
 
 #### LDA modeling ####
 #### Årsak ####
 
 # We create a term matrix we can clean up
-årsaksCorpus_ <-
-  Corpus(VectorSource(removePunctuation(årsak$ALL)))
-årsaksDTM <- DocumentTermMatrix(årsaksCorpus_)
+full_data_Corpus <-
+  Corpus(VectorSource(removePunctuation(full_data$ALL)))
+full_data_DTM <- DocumentTermMatrix(full_data_Corpus)
 
 # convert the document term matrix to a tidytext corpus
-årsaksDTM_tidy <- tidy(årsaksDTM)
+full_data_DTM_tidy <- tidy(full_data_DTM)
 
 # I'm going to add my own custom stop words that I don't think will be
 # very informative in these reports
@@ -590,156 +740,117 @@ norwegian_stop_words <- tibble(word = tm::stopwords(kind = "no"))
 
 
 # remove stopwords
-årsaksDTM_tidy_cleaned <-
-  årsaksDTM_tidy %>% # take our tidy dtm and...
+full_data_DTM_tidy_cleaned <-
+  full_data_DTM_tidy %>% # take our tidy dtm and...
   anti_join(norwegian_stop_words, by = c("term" = "word")) %>% # remove Norwegian stopwords and
   anti_join(stop_words, by = c("term" = "word")) %>% # remove English stopwords as well
   anti_join(custom_stop_words, by = c("term" = "word")) # remove custom stopwords
 
 # reconstruct cleaned documents (so that each word shows up the correct number of times)
-cleaned_documents <-          årsaksDTM_tidy_cleaned %>%
+cleaned_documents <-          full_data_DTM_tidy_cleaned %>%
   group_by(document) %>%
   mutate(terms = toString(rep(term, count))) %>%
   select(document, terms) %>%
   unique()
 
-# check out what the cleaned documents look like (should just be a bunch of content words)
-# in alphabetic order
+# check out what the cleaned documents look like (should just be a bunch of
+# content words) in alphabetic order
 head(cleaned_documents)
 
-top_terms_by_topic_LDA(cleaned_documents$terms, number_of_topics = 4)
+top_terms_by_topic_LDA(cleaned_documents$terms, number_of_topics = 3)
 
 # stem the words (e.g. convert each word to its stem, where applicable)
-årsaksDTM_tidy_cleaned_stem <-          årsaksDTM_tidy_cleaned %>%
+full_data_DTM_tidy_cleaned_stem <-          full_data_DTM_tidy_cleaned %>%
   mutate(stem = wordStem(term))
 
 # reconstruct our documents
-cleaned_documents_stem <-          årsaksDTM_tidy_cleaned_stem %>%
+cleaned_documents_stem <-          full_data_DTM_tidy_cleaned_stem %>%
   group_by(document) %>%
   mutate(terms = toString(rep(stem, count))) %>%
   select(document, terms) %>%
   unique()
 
+
 # now let's look at the new most informative terms
+
+# Add theme_bw
 top_terms_by_topic_LDA(cleaned_documents_stem$terms, number_of_topics = 4)
 
 #### Modeling ####
 
+# get just the tf-idf output for the type of vehicles
+
+# In order to do supervised modeling, we need to label stuff, such as accident
+# type
 
 
-# Based in the årsak data set, how well can we predict the amount of dead or
-# injured people?
-årsak_dataset <-
-  left_join(ulykke, årsak, årsaksdetalj, by = 'ulykke_id')
+#### tf_idf ####
 
-fartøy_dataset <-
-  full_join(fartøy, konsekvens, miljøskade, by = 'fartøy_id')
 
-person_dataset <-
-  full_join(personskade, personverneutstyr, ulykke, by = 'person_id')
+full_data$ulykketype[is.na(full_data$ulykketype)] <- "Ukjent"
 
-tilrådning_dataset <-
-  full_join(tilrådning, tilrådningstiltak, by = 'tilrådning_id')
 
-full_data <-
-  left_join(årsak_dataset, fartøy, personskade, by = 'ulykke_id')
 
-personskade$person_id.x <- personskade$person_id
-personskade$person_id.y <- personskade$person_id
+tfidf_bygroup_ALL <- top_terms_by_topic_tfidf(text_df = full_data, 
+                                                  text_column = ALL, 
+                                                  group = ulykketype, 
+                                                  plot = F)
 
-full_data <-
-  left_join(full_data, personskade, by = c('person_id.x', 'person_id.y'))
+# do our own plotting
+tfidf_bygroup_ALL  %>% 
+  group_by(ulykketype) %>% 
+  top_n(5) %>% 
+  ungroup %>%
+  ggplot(aes(word, tf_idf, fill = ulykketype)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  theme_bw()+
+  facet_wrap(~ulykketype, ncol = 4, scales = "free", ) +
+  coord_flip()
+
+
 
 
 #### n-grams ####
 # not finished
 
-# get just the tf-idf output for the type of vehicles
-tfidf_bygroup_direkteårsak <- top_terms_by_topic_tfidf(text_df = årsak, 
-                                                  text_column = ALL, 
-                                                  group = direkte_årsak, 
-                                                  plot = F)
-
-# do our own plotting
-reviews_tfidf_byHotel  %>% 
-  group_by(hotel) %>% 
-  top_n(5) %>% 
-  ungroup %>%
-  ggplot(aes(word, tf_idf, fill = hotel)) +
-  geom_col(show.legend = FALSE) +
-  labs(x = NULL, y = "tf-idf") +
-  facet_wrap(~hotel, ncol = 4, scales = "free", ) +
-  coord_flip()
-
-
-årsak %>% 
-  unnest_tokens(word, text, token = "ngrams", n = 2) %>% 
+full_data %>% 
+  unnest_tokens(word, ALL, token = "ngrams", n = 2) %>% 
+  filter(!is.na(word)) %>%
   separate(word, c("word1", "word2"), sep = " ") %>% 
   filter(!word1 %in% stop_words$word) %>%
-  filter(!word2 %in% stop_words$word) %>% 
+  filter(!word2 %in% stop_words$word) %>%
   unite(word, word1, word2, sep = " ") %>% 
   count(word, sort = TRUE) %>% 
   slice(1:10) %>% 
-  ggplot() + geom_bar(aes(word, n), stat = "identity", fill = "#de5833") +
-  theme_minimal() +
+  ggplot() + 
+  geom_bar(aes(word, n), stat = "identity", fill = "#de5833", position = "dodge") +
+  theme_bw() +
   coord_flip() +
-  labs(title = "Top Bigrams of Hotel Reviews",
-       subtitle = "using Tidytext in R",
-       caption = "Data Source: kaggle.com/rtatman")
-
-#### Creating the text variables ####
-
-# Freetext causes
-
-# full_data <- full_data %>%
-#   mutate(
-#     freetext = paste(
-#       direkteårsak_person_fritekst,
-#       direkteårsak_ytre_fritekst,
-#       direkteårsak_utstyr_fritekst,
-#       indirekteårsak_person_fritekst,
-#       indirekteårsak_arbeidsmiljø_fritekst,
-#       indirekteårsak_ytre_fritekst,
-#       indirekteårsak_utstyr_fritekst,
-#       bakenforårsak_ledelse_fritekst,
-#       bakenforårsak_prosedyre_fritekst,
-#       fritekst
-#     , sep = " //// ")
-#
-#   ) %>%
-#   mutate(freetext = str_squish(str_remove_all(freetext, pattern = "NA")))
-
-full_data <- full_data %>%
-  pivot_longer(
-    cols = c(direkteårsak_person_fritekst,
-    direkteårsak_ytre_fritekst,
-    direkteårsak_utstyr_fritekst,
-    indirekteårsak_person_fritekst,
-    indirekteårsak_arbeidsmiljø_fritekst,
-    indirekteårsak_ytre_fritekst,
-    indirekteårsak_utstyr_fritekst,
-    bakenforårsak_ledelse_fritekst,
-    bakenforårsak_prosedyre_fritekst,
-    fritekst),
-    values_drop_na = TRUE
-  ) %>%
-  group_by(person_id) %>%
-  summarise(ALL = toString(unique(value))) %>%
-  left_join(full_data)
-
-length(table(full_data$ALL))
-# 2099
-
-length(table(full_data$direkteårsak_person_fritekst))
-length(table(full_data$direkteårsak_ytre_fritekst))
-length(table(full_data$direkteårsak_utstyr_fritekst))
-length(table(full_data$indirekteårsak_person_fritekst))
-length(table(full_data$indirekteårsak_arbeidsmiljø_fritekst))
-length(table(full_data$indirekteårsak_ytre_fritekst))
-length(table(full_data$indirekteårsak_utstyr_fritekst))
-length(table(full_data$bakenforårsak_ledelse_fritekst))
-length(table(full_data$bakenforårsak_prosedyre_fritekst))
+  labs(title = "Top Bigrams of accident reports, using all free text fields")
 
 
-#### tf_idf ####
+# Attempting a sentiment analysis
 
+
+full_data %>%
+  unnest_tokens(word, ALL) %>%
+  inner_join(get_sentiments("bing")) %>% # pull out only sentiment words
+  count(sentiment) %>% # count the # of positive & negative words
+  spread(sentiment, n, fill = 0) %>% # made data wide rather than narrow
+  mutate(sentiment = positive - negative) # # of positive words - # of negative words
+
+# plot of sentiment over time & automatically choose a method to model the change
+full_data %>%
+  mutate(ulykkesår = format((years(
+    as.Date(ulykkedato, format = "%d.%m.%Y")
+  ))))  %>%
+  unnest_tokens(word, ALL) %>%
+  inner_join(get_sentiments()) %>% # pull out only sentiment words
+  count(sentiment) %>% # count the # of positive & negative words
+  spread(sentiment, n, fill = 0) %>% # made data wide rather than narrow
+  mutate(sentiment = positive - negative) # of positive words - # of negative words
+  ggplot(sentiments, aes(x = as.numeric(ulykkesår), y = sentiment)) + 
+  geom_point(aes(color = ulykkesår))+ # add points to our plot, color-coded by president
+  geom_smooth(method = "auto") # pick a method & fit a model
+  
