@@ -12,7 +12,7 @@ library(reshape2) # additional utility & workflow functions
 
 if (!require("tidytext"))
   install.packages("tidytext")
-library(tidytext) # tidy implimentation of NLP methods
+library(tidytext) # tidy implementation of NLP methods
 
 if (!require("tm"))
   install.packages("tm")
@@ -288,7 +288,7 @@ safe_colorblind_palette <-
 
 # Concenating the free text fields, most of which are from årsak.
 
-årsak_with_detail <- full_join(x = årsak, y = årsaksdetalj, by = "årsak_id", keep = T)
+årsak_with_detail <- full_join(x = årsak, y = årsaksdetalj, by = "årsak_id", keep = TRUE)
 årsak_with_detail$årsak_id <- årsak_with_detail$årsak_id.x
 
 # Using full_join, all values that exist in either dataset x or y is included.
@@ -305,7 +305,7 @@ safe_colorblind_palette <-
              bakenforårsak_ledelse_fritekst,
              bakenforårsak_prosedyre_fritekst, 
              fritekst),
-    values_drop_na = TRUE
+    values_drop_na = FALSE
   ) %>%
   group_by(årsak_id) %>%
   summarise(ALL = toString(unique(value))) %>%
@@ -322,7 +322,7 @@ full_data <- full_data %>%
   pivot_longer(
     cols = c(hendelsesforløp, 
              ALL),
-    values_drop_na = TRUE
+    values_drop_na = FALSE
   ) %>%
   group_by(ulykke_id) %>% 
   summarise(ALL = toString(unique(value))) %>%
@@ -336,7 +336,7 @@ full_data <- full_data %>%
   pivot_longer(
     cols = c(personskade, 
              ALL),
-    values_drop_na = TRUE
+    values_drop_na = FALSE
   ) %>%
   group_by(ulykke_id) %>% 
   summarise(ALL = toString(unique(value))) %>%
@@ -351,11 +351,21 @@ full_data <- full_data %>%
   pivot_longer(
     cols = c(annenskade, 
              ALL),
-    values_drop_na = TRUE
+    values_drop_na = FALSE
   ) %>%
   group_by(ulykke_id) %>% 
   summarise(ALL = toString(unique(value))) %>%
   full_join(full_data)
+
+# Removing datasets we combined to save some space.
+
+rm(årsak)
+rm(årsak_with_detail)
+rm(årsaksdetalj)
+rm(person)
+rm(personskade)
+rm(personverneutstyr)
+rm(tilrådningstiltak)
 
 ## By year
 library(chron)
@@ -410,7 +420,7 @@ full_data$ulykkesmåned
 a <- mean(table(full_data$ulykkesmåned))
 
 
-full_data %>%
+ulykke %>%
   mutate(ulykkesmåned = str_squish(format((months(
     as.Date(ulykkedato, format = "%d.%m.%Y")
   )))))  %>%
@@ -538,65 +548,121 @@ ulykke %>%
   geom_text(aes(label = n), nudge_y = 500)+
   scale_fill_manual(values = c(safe_colorblind_palette))
 
+# Also done with "ulykke"
+
+rm(ulykke)
+
+# A bit of cleaning, removing punctuation etc.
+
+# This creates too big of a file, so I'll have to postpone doing the full data
+# set, splitting it up
+
+
+
+full_data <- full_data %>%
+  filter(!is.na(ALL)) %>%
+  select(ALL, antall_skadet, antall_omkommet) %>%
+  mutate(ALL_cleaned = str_replace_all(string = ALL, pattern =  "\n", replacement = " ")) %>%
+  mutate(ALL_cleaned2 = str_squish(removePunctuation(ALL_cleaned, preserve_intra_word_contractions = T, preserve_intra_word_dashes = T))) %>%
+  select(ALL_cleaned2, antall_skadet, antall_omkommet) %>%
+  rename(c("ALL" = "ALL_cleaned2"))
+
+
 
 #### Stemming/stopwords or not? ####
-tidy_full <-   full_data %>%
-  unnest_tokens(word, ALL) %>%
-  anti_join(get_stopwords("no")) %>%
-  anti_join(get_stopwords("en"))
 
-tidy_full %>%
-  count(word, sort = TRUE)
+# Without removing stopwords
 
 full_data %>%
   unnest_tokens(word, ALL) %>%
   count(word, sort = TRUE)
 
+full_data %>%
+  unnest_tokens(word, ALL) %>%
+  anti_join(get_stopwords("no")) %>%
+  anti_join(get_stopwords("en")) %>%
+  count(word, sort = TRUE)
+
+# Removing custom words
+
+custom_words <-
+  c(
+    "pus",
+    "ca",
+    "på",
+    "g09",
+    "g11",
+    "kl",
+    "fritekster",
+    "konvertert",
+    "fikk",
+    "ulykkesbeskrivelse",
+    "m",
+    "skadebeskrivelse",
+    "077",
+    "106"
+  )
+
+full_data %>%
+  unnest_tokens(word, ALL) %>%
+  anti_join(get_stopwords("no")) %>%
+  anti_join(get_stopwords("en")) %>%
+  filter(!word %in% custom_words) %>%
+  count(word, sort = TRUE)
+
+
 #### Building a regression model ####
 # From chapter 6 https://smltar.com/mlregression.html#firstmlregression
 
+# I think the data set is too extensive as it is right now, extracting a smaller
+# sample first
+
+small_data <- full_data[!is.na(full_data$antall_skadet),]
+
 library(tidymodels)
 set.seed(1234)
-full_data_split <-   full_data %>%
-  mutate(ALL = str_remove_all(ALL, "'")) %>%
+small_data_split <-   small_data %>%
+  mutate(ALL = removeNumbers(ALL)) %>%
   initial_split()
 
-full_data_train <- training(full_data_split)
-full_data_test <- testing(full_data_split)
+small_data_train <- training(small_data_split)
+small_data_test <- testing(small_data_split)
 
 library(textrecipes)
 
+
 # We can add more predictors here, such as
 
-full_data_rec <- recipe(antall_skadet ~ ALL, data = full_data_train) %>%
+small_data_rec <- recipe(antall_skadet ~ ALL, data = small_data_train) %>%
   step_tokenize(ALL) %>%
-  step_stopwords(language = "no", custom_stopword_source = norwegian_stop_words) %>%
+  step_stopwords(language = "no", custom_stopword_source = custom_words) %>%
+  step_stopwords(language = "en") %>%
   step_tokenfilter(ALL, max_tokens = 1e3) %>%
   step_tfidf(ALL) %>%
   step_normalize(all_predictors())
 
-full_data_rec
+small_data_rec
 
-full_data_prep <- prep(full_data_rec)
-full_data_bake <- bake(full_data_prep, new_data = NULL)
+small_data_prep <- prep(small_data_rec)
+small_data_bake <- bake(small_data_prep, new_data = NULL)
 
-dim(full_data_bake)
+dim(small_data_bake)
 
 # Creating a workflow
 
-full_data_wf <- workflow() %>%
-  add_recipe(full_data_rec)
+small_data_wf <- workflow() %>%
+  add_recipe(small_data_rec)
 
-full_data_wf
+small_data_wf
 
 svm_spec <- svm_linear() %>%
   set_mode("regression") %>%
   set_engine("LiblineaR")
 
 
-svm_fit <- full_data_wf %>%
+svm_fit <- small_data_wf %>%
   add_model(svm_spec) %>%
-  fit(data = full_data_train)
+  fit(data = small_data_train)
 
 # Extracting results
 
@@ -616,16 +682,16 @@ svm_fit %>%
 # Creating folds to validate 
 
 set.seed(123)
-full_data_folds <- vfold_cv(full_data_train)
+small_data_folds <- vfold_cv(small_data_train)
 
-full_data_folds
+small_data_folds
 
 # Resampling - rs = resample here
 
 set.seed(123)
 svm_rs <- fit_resamples(
-  full_data_wf %>% add_model(svm_spec),
-  full_data_folds,
+  small_data_wf %>% add_model(svm_spec),
+  small_data_folds,
   control = control_resamples(save_pred = TRUE)
 )
 
@@ -645,7 +711,8 @@ svm_rs %>%
     title = "Predicted and true number of injured, linear SVM",
     subtitle = "Each cross-validation fold is shown in a different color"
   )+
-  theme_bw()
+  theme_bw()+
+  scale_fill_manual(values = c(safe_colorblind_palette))
 
 # Removing the outlier #10
 
@@ -662,6 +729,7 @@ svm_rs %>%
     subtitle = "Each cross-validation fold is shown in a different color"
   ) +
   theme_bw()+
+  scale_fill_manual(values = c(safe_colorblind_palette))+
   xlim(0, 22)
 
 
@@ -672,17 +740,18 @@ null_regression <- null_model() %>%
   set_mode("regression")
 
 null_rs <- fit_resamples(
-  full_data_wf %>% add_model(null_regression),
-  full_data_folds,
+  small_data_wf %>% add_model(null_regression),
+  small_data_folds,
   metrics = metric_set(rmse)
 )
 
 null_rs
 
-# Remember that this is using unigrams, but it is in fact worse than the null
-# model
+# Remember that this is using unigrams, but it is in fact a little better than
+# the null model
 
 collect_metrics(null_rs)
+collect_metrics(svm_rs)
 
 
 # Compare to random forest
@@ -695,17 +764,15 @@ rf_spec <- rand_forest(trees = 100) %>%
   set_mode("regression")
 
 rf_spec
-rf_spec_rfengine <- rand_forest(trees = 100) %>%
-  set_engine("randomForest") %>%
-  set_mode("regression")
 
 rf_rs <- fit_resamples(
-  full_data_wf %>% add_model(rf_spec),
-  full_data_folds,
+  small_data_wf %>% add_model(rf_spec),
+  small_data_folds,
   control = control_resamples(save_pred = TRUE)
 )
 
 collect_metrics(rf_rs)
+
 
 collect_predictions(rf_rs) %>%
   ggplot(aes(antall_skadet, .pred, color = id)) +
@@ -721,8 +788,189 @@ collect_predictions(rf_rs) %>%
   xlim(0,22)+
   theme_bw()
 
+# Using n-grams for modeling
+ngram_rec <- function(ngram_options) {
+  recipe(antall_skadet ~ ALL, data = small_data_train) %>%
+    step_tokenize(ALL, token = "ngrams", options = ngram_options) %>%
+    step_tokenfilter(ALL, max_tokens = 1e3) %>%
+    step_tfidf(ALL) %>%
+    step_normalize(all_predictors())
+}
+
+svm_wf <- workflow() %>%
+  add_model(svm_spec)
+
+fit_ngram <- function(ngram_options) {
+  fit_resamples(
+    svm_wf %>% add_recipe(ngram_rec(ngram_options)),
+    small_data_folds
+  )
+}
+
+# Seeing the differences between uni-, bi- and trigrams for SVM
+
+set.seed(123)
+unigram_rs <- fit_ngram(list(n = 1))
+
+set.seed(234)
+bigram_rs <- fit_ngram(list(n = 2, n_min = 1))
+
+set.seed(345)
+trigram_rs <- fit_ngram(list(n = 3, n_min = 1))
+
+
+
+list(`1` = unigram_rs,
+     `1 and 2` = bigram_rs,
+     `1, 2, and 3` = trigram_rs) %>%
+  map_dfr(collect_metrics, .id = "name") %>%
+  filter(.metric == "rmse") %>%
+  ggplot(aes(name, mean, color = name)) +
+  geom_crossbar(aes(ymin = mean - std_err, ymax = mean + std_err), alpha = 0.6) +
+  geom_point(size = 3, alpha = 0.8) +
+  theme_bw()+
+  theme(legend.position = "none") +
+  labs(
+    x = "Degree of n-grams",
+    y = "RMSE",
+    title = "Model performance for different degrees of n-gram tokenization",
+    subtitle = "For the same number of tokens, unigrams performed best"
+  )
+
+# Comparing mean absolute % error for each resample
+
+svm_rs %>%
+  collect_predictions() %>%
+  group_by(id) %>%
+  mae(antall_skadet, .pred)
+
+
+# Tuning the model and changing the number of tokens we use
+
+final_rec <- recipe(antall_skadet ~ ALL, data = small_data_train) %>%
+  step_tokenize(ALL, token = "ngrams", options = list(n = 2, n_min = 1)) %>%
+  step_tokenfilter(ALL, max_tokens = tune()) %>%
+  step_stopwords(language = "no", custom_stopword_source = custom_words) %>%
+  step_stopwords(language = "en") %>%
+  step_tfidf(ALL) %>%
+  step_normalize(all_predictors())
+
+final_rec
+
+svm_spec <- svm_linear() %>%
+  set_mode("regression") %>%
+  set_engine("LiblineaR")
+
+svm_spec
+
+tune_wf <- workflow() %>%
+  add_recipe(final_rec) %>%
+  add_model(svm_spec)
+
+tune_wf
+
+final_grid <- grid_regular(
+  max_tokens(range = c(1e3, 6e3)),
+  levels = 6
+)
+
+final_grid
+
+final_rs <- tune_grid(
+  tune_wf,
+  small_data_folds,
+  grid = final_grid,
+  metrics = metric_set(rmse, mae),
+  control = control_resamples(save_pred = TRUE)
+)
+
+final_rs
+
+# Grapichally represent differences
+final_rs %>%
+  collect_metrics() %>%
+  ggplot(aes(max_tokens, mean, color = .metric)) +
+  geom_line(size = 1.5, alpha = 0.5) +
+  geom_point(size = 2, alpha = 0.9) +
+  facet_wrap(~.metric, scales = "free_y", ncol = 1) +
+  theme(legend.position = "none") +
+  labs(
+    x = "Number of tokens",
+    title = "Linear SVM performance across number of tokens",
+    subtitle = "Performance improves as we include more tokens"
+  )
+
+chosen_mae <- final_rs %>%
+  select_by_pct_loss(metric = "mae", max_tokens, limit = 3)
+
+chosen_mae
+
+final_wf <- finalize_workflow(tune_wf, chosen_mae)
+
+final_wf
+
+# Evaluating it on real data
+
+final_fitted <- last_fit(final_wf, small_data_split)
+
+collect_metrics(final_fitted)
+
+small_data_fit <- pull_workflow_fit(final_fitted$.workflow[[1]])
+
+small_data_fit %>%
+  tidy() %>%
+  filter(term != "Bias") %>%
+  mutate(
+    sign = case_when(estimate > 0 ~ "More (than mean injured)",
+                     TRUE ~ "Less (than mean injured)"),
+    estimate = abs(estimate),
+    term = str_remove_all(term, "tfidf_ALL_")
+  ) %>%
+  group_by(sign) %>%
+  top_n(20, estimate) %>%
+  ungroup() %>%
+  ggplot(aes(x = estimate,
+             y = fct_reorder(term, estimate),
+             fill = sign)) +
+  geom_col(show.legend = FALSE) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap(~sign, scales = "free") +
+  labs(
+    y = NULL,
+    title = paste("Variable importance for predicting amount of",
+                  "injured people in accident reports"),
+    subtitle = paste("These features are the most importance",
+                     "in predicting the amount of injured")
+  )+
+  theme_bw()+
+  scale_fill_manual(values = c(safe_colorblind_palette))
+
+final_fitted %>%
+  collect_predictions() %>%
+  ggplot(aes(antall_skadet, .pred)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_point(alpha = 0.3) +
+  labs(
+    x = "Actual",
+    y = "Predicted amount of injured people",
+    title = paste("Predicted and actual amount of injured for the testing set of",
+                  "accident reports"),
+    subtitle = "For the testing set, predictions are most accurate between 0-5 injured"
+  ) +
+  scale_x_continuous(breaks = seq(0,22, by = 1))+
+  theme_bw()
+
+small_data_bind <- collect_predictions(final_fitted) %>%
+  bind_cols(small_data_test %>% select(-antall_skadet)) %>%
+  filter(abs(antall_skadet - .pred) > 1)
+
+small_data_bind %>%
+  arrange(-antall_skadet) %>%
+  select(antall_skadet, .pred, ALL)
+
 #### LDA modeling ####
 #### Årsak ####
+
 
 # We create a term matrix we can clean up
 full_data_Corpus <-
