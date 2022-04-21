@@ -175,15 +175,15 @@ top_terms_by_topic_tfidf <- function(text_df, text_column, group_column, plot = 
 #### Importing data ####
 
 library(readr)
-# Årsak
+# Ãrsak
 årsak <-
-  read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/årsak.csv")
+  read_csv("~/Master/delt_opp/årsak.csv")
 readr::spec(årsak)
 
-# Fartøy
-# fartøy <-
+# FartÃ¸y
+# fartÃ¸y <-
 #   read_csv(
-#     "~/Documents/Fritidsbåtplattformen/Delt opp/fartøy.csv",
+#     "~/Master/delt_opp/fartÃ¸y.csv",
 #     col_types = cols(
 #       imonr = col_character(),
 #       bruttotonnasje = col_character(),
@@ -191,29 +191,29 @@ readr::spec(årsak)
 #       bredde = col_character(),
 #       lengde_loa = col_character(),
 #       lengde_lpp = col_character(),
-#       sisteombygningsår = col_character(),
-#       fartsområde_kode = col_character(),
+#       sisteombygningsÃ¥r = col_character(),
+#       fartsomrÃ¥de_kode = col_character(),
 #       hinkode = col_character(),
 #       ulykkested_kode = col_character(),
-#       fartøyhastighet = col_character(),
-#       sjøkart_kode = col_character(),
+#       fartÃ¸yhastighet = col_character(),
+#       sjÃ¸kart_kode = col_character(),
 #       lastingprosent = col_character(),
 #       skrogposisjon_kode = col_character(),
-#       skrogskadehøydebunn = col_character(),
+#       skrogskadehÃ¸ydebunn = col_character(),
 #       distanseaptilx = col_character()
 #     )
 #   )
-# readr::spec(fartøy)
+# readr::spec(fartÃ¸y)
 
 # Konsekvens
 # konsekvens <-
-#   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/konsekvens.csv")
+#   read_csv("~/Master/delt_opp/konsekvens.csv")
 # readr::spec(konsekvens)
 
 # Miljøskade
 # miljøskade <-
 #   read_csv(
-#     "~/Documents/Fritidsbåtplattformen/Delt opp/miljøskade.csv",
+#     "~/Master/delt_opp/miljøskade.csv",
 #     col_types = cols(fnnummer = col_character())
 #   )
 # readr::spec(miljøskade)
@@ -221,7 +221,7 @@ readr::spec(årsak)
 # Person
 person <-
   read_csv(
-    "~/Documents/Fritidsbåtplattformen/Delt opp/person.csv",
+    "~/Master/delt_opp/person.csv",
     col_types = cols(pusulykkenummer = col_character(),
                      yrkeskodefisker = col_character(),
                      yrkeskodefisker_kode = col_character()
@@ -231,35 +231,34 @@ readr::spec(person)
 
 # Personskade
 personskade <-
-  read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/personskade.csv")
+  read_csv("~/Master/delt_opp/personskade.csv")
 readr::spec(personskade)
-
 # Personverneutstyr
 personverneutstyr <-
-  read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/personverneutstyr.csv")
+  read_csv("~/Master/delt_opp/personverneutstyr.csv")
 readr::spec(personverneutstyr)
 
 # Tilrådning
 # tilrådning <-
-#   read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/tilrådning.csv")
+#   read_csv("~/Master/delt_opp/tilrådning.csv")
 # readr::spec(tilrådning)
 
 # Tilrådningstiltak
 tilrådningstiltak <-
-  read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/tilrådningstiltak.csv")
+  read_csv("~/Master/delt_opp/tilrådningstiltak.csv")
 readr::spec(tilrådningstiltak)
 
 # Ulykke
 ulykke <-
   read_csv(
-    "~/Documents/Fritidsbåtplattformen/Delt opp/ulykke.csv",
+    "~/Master/delt_opp/ulykke.csv",
     col_types = cols(posisjon_breddegrad = col_character())
   )
 readr::spec(ulykke)
 
 # ÅrsakDetalj
 årsaksdetalj <-
-  read_csv("~/Documents/Fritidsbåtplattformen/Delt opp/årsaksdetaljer.csv")
+  read_csv("~/Master/delt_opp/årsaksdetaljer.csv")
 readr::spec(årsaksdetalj)
 
 # Commands that might prove useful:
@@ -600,7 +599,11 @@ custom_words <-
     "m",
     "skadebeskrivelse",
     "077",
-    "106"
+    "106",
+    "na",
+    "dama",
+    NA, 
+    "NA"
   )
 
 full_data %>%
@@ -609,6 +612,8 @@ full_data %>%
   anti_join(get_stopwords("en")) %>%
   filter(!word %in% custom_words) %>%
   count(word, sort = TRUE)
+
+# Stemming
 
 
 #### Building a regression model ####
@@ -635,8 +640,9 @@ library(textrecipes)
 
 small_data_rec <- recipe(antall_skadet ~ ALL, data = small_data_train) %>%
   step_tokenize(ALL) %>%
-  step_stopwords(language = "no", custom_stopword_source = custom_words) %>%
+  step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
   step_tokenfilter(ALL, max_tokens = 1e3) %>%
   step_tfidf(ALL) %>%
   step_normalize(all_predictors())
@@ -850,7 +856,8 @@ svm_rs %>%
 final_rec <- recipe(antall_skadet ~ ALL, data = small_data_train) %>%
   step_tokenize(ALL, token = "ngrams", options = list(n = 2, n_min = 1)) %>%
   step_tokenfilter(ALL, max_tokens = tune()) %>%
-  step_stopwords(language = "no", custom_stopword_source = custom_words) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
   step_stopwords(language = "en") %>%
   step_tfidf(ALL) %>%
   step_normalize(all_predictors())
@@ -969,7 +976,7 @@ small_data_bind %>%
   select(antall_skadet, .pred, ALL)
 
 #### LDA modeling ####
-#### Årsak ####
+#### Ãrsak ####
 
 
 # We create a term matrix we can clean up
@@ -982,17 +989,16 @@ full_data_DTM_tidy <- tidy(full_data_DTM)
 
 # I'm going to add my own custom stop words that I don't think will be
 # very informative in these reports
-custom_stop_words <- tibble(word = c("på", ""))
+custom_words
 
-norwegian_stop_words <- tibble(word = tm::stopwords(kind = "no"))
+norwegian_stop_words <- rbind(tibble(word = tm::stopwords(kind = "no")), tibble(word = custom_words))
 
 
 # remove stopwords
 full_data_DTM_tidy_cleaned <-
   full_data_DTM_tidy %>% # take our tidy dtm and...
-  anti_join(norwegian_stop_words, by = c("term" = "word")) %>% # remove Norwegian stopwords and
-  anti_join(stop_words, by = c("term" = "word")) %>% # remove English stopwords as well
-  anti_join(custom_stop_words, by = c("term" = "word")) # remove custom stopwords
+  anti_join(norwegian_stop_words, by = c("term" = "word")) %>% # remove Norwegian stopwords and custom words
+  anti_join(stop_words, by = c("term" = "word")) # remove English stopwords as well
 
 # reconstruct cleaned documents (so that each word shows up the correct number of times)
 cleaned_documents <-          full_data_DTM_tidy_cleaned %>%
@@ -1008,11 +1014,11 @@ head(cleaned_documents)
 top_terms_by_topic_LDA(cleaned_documents$terms, number_of_topics = 3)
 
 # stem the words (e.g. convert each word to its stem, where applicable)
-full_data_DTM_tidy_cleaned_stem <-          full_data_DTM_tidy_cleaned %>%
+full_data_DTM_tidy_cleaned_stem <-  full_data_DTM_tidy_cleaned %>%
   mutate(stem = wordStem(term))
 
 # reconstruct our documents
-cleaned_documents_stem <-          full_data_DTM_tidy_cleaned_stem %>%
+cleaned_documents_stem <- full_data_DTM_tidy_cleaned_stem %>%
   group_by(document) %>%
   mutate(terms = toString(rep(stem, count))) %>%
   select(document, terms) %>%
@@ -1021,7 +1027,6 @@ cleaned_documents_stem <-          full_data_DTM_tidy_cleaned_stem %>%
 
 # now let's look at the new most informative terms
 
-# Add theme_bw
 top_terms_by_topic_LDA(cleaned_documents_stem$terms, number_of_topics = 4)
 
 #### Modeling ####
@@ -1068,6 +1073,8 @@ full_data %>%
   separate(word, c("word1", "word2"), sep = " ") %>% 
   filter(!word1 %in% stop_words$word) %>%
   filter(!word2 %in% stop_words$word) %>%
+  filter(!word1 %in% norwegian_stop_words$word) %>%
+  filter(!word2 %in% norwegian_stop_words$word) %>%
   unite(word, word1, word2, sep = " ") %>% 
   count(word, sort = TRUE) %>% 
   slice(1:10) %>% 
@@ -1101,4 +1108,171 @@ full_data %>%
   ggplot(sentiments, aes(x = as.numeric(ulykkesår), y = sentiment)) + 
   geom_point(aes(color = ulykkesår))+ # add points to our plot, color-coded by president
   geom_smooth(method = "auto") # pick a method & fit a model
+  
+  
+  small_data <- full_data[!is.na(full_data$ALL),]
+  
+  small_data <- small_data %>%
+    unnest_tokens(word, ALL) %>%
+    anti_join(get_stopwords("no")) %>%
+    anti_join(get_stopwords("en")) %>%
+    filter(!word %in% custom_words)
+  
+  ## https://towardsdatascience.com/beginners-guide-to-lda-topic-modelling-with-r-e57a5a8e7a25
+ 
+# Doesn't work, probably not necessary tho. 
+  
+#   small_data <- small_data %>%
+#     mutate(ID = row_number())
+#   
+# small_data <- small_data %>% mutate(ind = row_number())
+# 
+# small_data <- small_data %>%
+#     tidyr::pivot_wider(key = ID, value = ALL)
+# 
+# small_data [is.na(small_data)] <- ""
+# 
+# small_data <- tidyr::unite(small_data, text,-ID,sep =" " )
+# 
+# small_data$word <- trimws(small_data$word)
+
+#create DTM
+library(textmineR)
+dtm <- CreateDtm(small_data$word,
+                 ngram_window = c(1, 3), 
+                 stem_lemma_function = function(x) SnowballC::wordStem(x, language = "norwegian"))
+  
+tf <- TermDocFreq(dtm = dtm)
+  
+original_tf <- tf %>% select(term, term_freq,doc_freq)
+  
+original_tf <- rowid_to_column(original_tf, var = "rowid") # Eliminate words appearing less than 2 times or in more than half of the
+  # documents
+vocabulary <- tf$term[ tf$term_freq > 1 & tf$doc_freq < nrow(dtm) / 2 ]
+  
+k_list <- seq(1, 20, by = 1)
+setwd("~/Master/masterthesis")
+
+model_dir <- paste0("models_", digest::digest(vocabulary, algo = "sha1"))
+if(!dir.exists(model_dir)) dir.create(model_dir)
+  
+library(parallel)
+model_list <- TmParallelApply(cpus = 4, X = k_list, FUN = function(k){
+    filename = file.path(model_dir, paste0(k, "_topics.rda"))
+    
+if(!file.exists(filename)) {
+      m <- FitLdaModel(dtm = dtm, k = k, iterations = 500)
+      m$k <- k
+      m$coherence <- CalcProbCoherence(phi = m$phi, dtm = dtm, M = 5)
+      save(m, file = filename)
+    } else {
+      load(filename)
+    }
+    
+    m
+  }, export=c("dtm", "model_dir")) # export only needed for Windows machines
+
+#model tuning
+  
+#choosing the best model
+coherence_mat <- data.frame(k = sapply(model_list, function(x) nrow(x$phi)), 
+                              coherence = sapply(model_list, function(x) mean(x$coherence)), 
+                              stringsAsFactors = FALSE)
+
+
+ggplot(coherence_mat, aes(x = k, y = coherence)) +
+  geom_point() +
+  geom_line(group = 1) +
+  ggtitle("Best topics by coherence score") +
+  theme_bw() +
+  scale_x_continuous(breaks = seq(1, 20, by = 1)) + 
+  scale_y_continuous(limits = c(-0.008, 0), breaks = seq(-0.008, 0, by = 0.001)) + 
+  ylab("Coherence")
+  
+# Top 20 terms, describing what this topic is about.
+model <- model_list[which.max(coherence_mat$coherence)][[ 1 ]]
+
+model$top_terms <- GetTopTerms(phi = model$phi, M = 20)
+
+top20_wide <- as.data.frame(model$top_terms)
+
+allterms <-data.frame(t(model$phi))
+
+allterms$word <- rownames(allterms)
+
+rownames(allterms) <- 1:nrow(allterms)
+
+allterms <- melt(allterms,idvars = "word") 
+
+allterms <- allterms %>% rename(topic = variable)
+
+FINAL_allterms <- allterms %>% group_by(topic) %>% arrange(desc(value))
+
+# Exporting top 20 terms
+
+write.csv(top20_wide, "top20_wide.csv")
+  
+# Dendrogram for calculating similarities
+  model$topic_linguistic_dist <- CalcHellingerDist(model$phi)
+  
+  model$hclust <- hclust(as.dist(model$topic_linguistic_dist), "ward.D")
+  
+  model$hclust$labels <- paste(model$hclust$labels, model$labels[ , 1])
+  
+  plot(model$hclust)
+  
+  #visualising topics of words based on the max value of phi
+  
+  set.seed(1234)
+  
+  final_summary_words <- data.frame(top_terms = t(model$top_terms))
+  
+  final_summary_words$topic <- rownames(final_summary_words)
+  
+  rownames(final_summary_words) <- 1:nrow(final_summary_words)
+  
+  final_summary_words <- final_summary_words %>% melt(id.vars = c("topic"))
+  
+  final_summary_words <- final_summary_words %>% rename(word = value) %>% select(-variable)
+  
+  final_summary_words <- left_join(final_summary_words, allterms)
+  
+  final_summary_words <- final_summary_words %>% group_by(topic,word) %>%
+    arrange(desc(value))
+  
+  final_summary_words <- final_summary_words %>% group_by(topic, word) %>% filter(row_number() == 1) %>% 
+    ungroup() %>% tidyr::separate(topic, into =c("t","topic")) %>% select(-t)
+  
+  word_topic_freq <- left_join(final_summary_words, original_tf, by = c("word" = "term"))
+  
+  pdf("cluster.pdf")
+  
+  for(i in 1:length(unique(final_summary_words$topic)))
+  {  wordcloud(words = subset(final_summary_words ,topic == i)$word, freq = subset(final_summary_words ,topic == i)$value, min.freq = 1,
+               max.words=200, random.order=FALSE, rot.per=0.35, 
+               colors=brewer.pal(8, "Dark2"))}
+  dev.off()
+
+# Single wordcloud
+
+ wordcloud::wordcloud(words = subset(final_summary_words ,topic == 15)$word, freq = subset(final_summary_words ,topic == i)$value, min.freq = 1,
+            max.words=200, random.order=FALSE, rot.per=0.35, 
+            colors=brewer.pal(8, "Dark2"))  
+# other stuff
+  cleaned_full_data <- full_data %>%
+    unnest_tokens(word, ALL) %>%
+    anti_join(get_stopwords("no")) %>%
+    anti_join(get_stopwords("en")) %>%
+    filter(!word %in% custom_words)
+  
+  cleaned_full_data$word <- stemDocument(cleaned_full_data$word, language = "norwegian")
+  
+  top_terms_by_topic_LDA(input_text = cleaned_full_data$word, plot = T, number_of_topic = 20)
+  
+  top_terms_by_topic_tfidf(text_df = full_data)
+  
+  tfidf_bygroup_ALL <- top_terms_by_topic_tfidf(text_df = full_data, 
+                                                text_column = ALL, 
+                                                group = ulykketype, 
+                                                plot = T)
   
