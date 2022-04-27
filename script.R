@@ -285,7 +285,7 @@ safe_colorblind_palette <-
 
 #### Creating a new variable of free text fields ####
 
-# Concenating the free text fields, most of which are from årsak.
+# Concatenating the free text fields, most of which are from årsak.
 
 årsak_with_detail <- full_join(x = årsak, y = årsaksdetalj, by = "årsak_id", keep = TRUE)
 årsak_with_detail$årsak_id <- årsak_with_detail$årsak_id.x
@@ -561,7 +561,7 @@ rm(ulykke)
 full_data <- full_data %>%
   filter(!is.na(ALL)) %>%
   select(ALL, antall_skadet, antall_omkommet) %>%
-  mutate(ALL_cleaned = str_replace_all(string = ALL, pattern =  "\n", replacement = " ")) %>%
+  mutate(ALL_cleaned = str_replace_all(string = ALL, pattern =  "\n", replacement = "")) %>%
   mutate(ALL_cleaned2 = str_squish(removePunctuation(ALL_cleaned, preserve_intra_word_contractions = T, preserve_intra_word_dashes = T))) %>%
   select(ALL_cleaned2, antall_skadet, antall_omkommet) %>%
   rename(c("ALL" = "ALL_cleaned2"))
@@ -602,7 +602,7 @@ custom_words <-
     "106",
     "na",
     "dama",
-    NA, 
+    NA,
     "NA"
   )
 
@@ -622,23 +622,31 @@ full_data %>%
 # I think the data set is too extensive as it is right now, extracting a smaller
 # sample first
 
-small_data <- full_data[!is.na(full_data$antall_skadet),]
+# small_data <- full_data[!is.na(full_data$antall_skadet),]
+
+full_data <- full_data %>%
+  mutate(ALL = str_replace_all(string = ALL, pattern =  "NA", replacement = "")) %>%
+  mutate(ALL = str_squish(ALL))
+
+# The algorithm can't handle missing values, so we're editing them to 0
+
+full_data$antall_skadet[is.na(full_data$antall_skadet)] <- 0
 
 library(tidymodels)
 set.seed(1234)
-small_data_split <-   small_data %>%
+full_data_split <-   full_data %>%
   mutate(ALL = removeNumbers(ALL)) %>%
   initial_split()
 
-small_data_train <- training(small_data_split)
-small_data_test <- testing(small_data_split)
+full_data_train <- training(full_data_split)
+full_data_test <- testing(full_data_split)
 
 library(textrecipes)
 
 
 # We can add more predictors here, such as
 
-small_data_rec <- recipe(antall_skadet ~ ALL, data = small_data_train) %>%
+full_data_rec <- recipe(antall_skadet ~ ALL, data = full_data_train) %>%
   step_tokenize(ALL) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
@@ -647,33 +655,33 @@ small_data_rec <- recipe(antall_skadet ~ ALL, data = small_data_train) %>%
   step_tfidf(ALL) %>%
   step_normalize(all_predictors())
 
-small_data_rec
+full_data_rec
 
-small_data_prep <- prep(small_data_rec)
-small_data_bake <- bake(small_data_prep, new_data = NULL)
+full_data_prep <- prep(full_data_rec)
+full_data_bake <- bake(full_data_prep, new_data = NULL)
 
-dim(small_data_bake)
+dim(full_data_bake)
 
 # Creating a workflow
 
-small_data_wf <- workflow() %>%
-  add_recipe(small_data_rec)
+full_data_wf <- workflow() %>%
+  add_recipe(full_data_rec)
 
-small_data_wf
+full_data_wf
 
 svm_spec <- svm_linear() %>%
   set_mode("regression") %>%
   set_engine("LiblineaR")
 
 
-svm_fit <- small_data_wf %>%
+svm_fit <- full_data_wf %>%
   add_model(svm_spec) %>%
-  fit(data = small_data_train)
+  fit(data = full_data_train)
 
 # Extracting results
 
 svm_fit %>%
-  pull_workflow_fit() %>%
+  extract_fit_parsnip() %>%
   tidy() %>%
   arrange(-estimate)
 
@@ -681,23 +689,23 @@ svm_fit %>%
 # terms contribute to a rescue mission having more injured
 
 svm_fit %>%
-  pull_workflow_fit() %>%
+  extract_fit_parsnip() %>%
   tidy() %>%
   arrange(estimate)
 
 # Creating folds to validate 
 
 set.seed(123)
-small_data_folds <- vfold_cv(small_data_train)
+full_data_folds <- vfold_cv(full_data_train)
 
-small_data_folds
+full_data_folds
 
 # Resampling - rs = resample here
 
 set.seed(123)
 svm_rs <- fit_resamples(
-  small_data_wf %>% add_model(svm_spec),
-  small_data_folds,
+  full_data_wf %>% add_model(svm_spec),
+  full_data_folds,
   control = control_resamples(save_pred = TRUE)
 )
 
@@ -746,8 +754,8 @@ null_regression <- null_model() %>%
   set_mode("regression")
 
 null_rs <- fit_resamples(
-  small_data_wf %>% add_model(null_regression),
-  small_data_folds,
+  full_data_wf %>% add_model(null_regression),
+  full_data_folds,
   metrics = metric_set(rmse)
 )
 
@@ -772,8 +780,8 @@ rf_spec <- rand_forest(trees = 100) %>%
 rf_spec
 
 rf_rs <- fit_resamples(
-  small_data_wf %>% add_model(rf_spec),
-  small_data_folds,
+  full_data_wf %>% add_model(rf_spec),
+  full_data_folds,
   control = control_resamples(save_pred = TRUE)
 )
 
@@ -791,12 +799,15 @@ collect_predictions(rf_rs) %>%
     title = "Predicted and true number of injured people using, a random forest model",
     subtitle = "Each cross-validation fold is shown in a different color, using 1000 trees"
   )+
-  xlim(0,22)+
+  #xlim(0,22)+
   theme_bw()
 
 # Using n-grams for modeling
 ngram_rec <- function(ngram_options) {
-  recipe(antall_skadet ~ ALL, data = small_data_train) %>%
+  recipe(antall_skadet ~ ALL, data = full_data_train) %>%
+    step_stopwords(language = "no") %>%
+    step_stopwords(custom_stopword_source = custom_words) %>%
+    step_stopwords(language = "en") %>%
     step_tokenize(ALL, token = "ngrams", options = ngram_options) %>%
     step_tokenfilter(ALL, max_tokens = 1e3) %>%
     step_tfidf(ALL) %>%
@@ -809,7 +820,7 @@ svm_wf <- workflow() %>%
 fit_ngram <- function(ngram_options) {
   fit_resamples(
     svm_wf %>% add_recipe(ngram_rec(ngram_options)),
-    small_data_folds
+    full_data_folds
   )
 }
 
@@ -824,11 +835,13 @@ bigram_rs <- fit_ngram(list(n = 2, n_min = 1))
 set.seed(345)
 trigram_rs <- fit_ngram(list(n = 3, n_min = 1))
 
-
+set.seed(567)
+quadgram_rs <- fit_ngram(list(n = 3, n_min = 1))
 
 list(`1` = unigram_rs,
      `1 and 2` = bigram_rs,
-     `1, 2, and 3` = trigram_rs) %>%
+     `1, 2, and 3` = trigram_rs,
+     `1, 2, 3 and 4` = quadgram_rs) %>%
   map_dfr(collect_metrics, .id = "name") %>%
   filter(.metric == "rmse") %>%
   ggplot(aes(name, mean, color = name)) +
@@ -853,7 +866,7 @@ svm_rs %>%
 
 # Tuning the model and changing the number of tokens we use
 
-final_rec <- recipe(antall_skadet ~ ALL, data = small_data_train) %>%
+final_rec <- recipe(antall_skadet ~ ALL, data = full_data_train) %>%
   step_tokenize(ALL, token = "ngrams", options = list(n = 2, n_min = 1)) %>%
   step_tokenfilter(ALL, max_tokens = tune()) %>%
   step_stopwords(language = "no") %>%
@@ -885,7 +898,7 @@ final_grid
 
 final_rs <- tune_grid(
   tune_wf,
-  small_data_folds,
+  full_data_folds,
   grid = final_grid,
   metrics = metric_set(rmse, mae),
   control = control_resamples(save_pred = TRUE)
@@ -918,15 +931,16 @@ final_wf
 
 # Evaluating it on real data
 
-final_fitted <- last_fit(final_wf, small_data_split)
+final_fitted <- last_fit(final_wf, full_data_split)
 
 collect_metrics(final_fitted)
 
-small_data_fit <- pull_workflow_fit(final_fitted$.workflow[[1]])
+full_data_fit <- pull_workflow_fit(final_fitted$.workflow[[1]])
 
-small_data_fit %>%
+full_data_fit %>%
   tidy() %>%
   filter(term != "Bias") %>%
+  #filter(term != "fartøyets") %>%
   mutate(
     sign = case_when(estimate > 0 ~ "More (than mean injured)",
                      TRUE ~ "Less (than mean injured)"),
@@ -967,16 +981,16 @@ final_fitted %>%
   scale_x_continuous(breaks = seq(0,22, by = 1))+
   theme_bw()
 
-small_data_bind <- collect_predictions(final_fitted) %>%
-  bind_cols(small_data_test %>% select(-antall_skadet)) %>%
+full_data_bind <- collect_predictions(final_fitted) %>%
+  bind_cols(full_data_test %>% select(-antall_skadet)) %>%
   filter(abs(antall_skadet - .pred) > 1)
 
-small_data_bind %>%
+full_data_bind %>%
   arrange(-antall_skadet) %>%
   select(antall_skadet, .pred, ALL)
 
 #### LDA modeling ####
-#### Ãrsak ####
+#### Ãrsak ####
 
 
 # We create a term matrix we can clean up
@@ -1139,8 +1153,8 @@ full_data %>%
 #create DTM
 library(textmineR)
 dtm <- CreateDtm(small_data$word,
-                 ngram_window = c(1, 3), 
-                 stem_lemma_function = function(x) SnowballC::wordStem(x, language = "norwegian"))
+                 ngram_window = c(1, 3))
+#, stem_lemma_function = function(x) SnowballC::wordStem(x, language = "norwegian"
   
 tf <- TermDocFreq(dtm = dtm)
   
@@ -1208,6 +1222,138 @@ allterms <- allterms %>% rename(topic = variable)
 
 FINAL_allterms <- allterms %>% group_by(topic) %>% arrange(desc(value))
 
+# r^2 for LDA ####
+
+library(textmineR)
+r2 <- CalcTopicModelR2(dtm = dtm, phi = model_list[[19]]$phi, theta = model_list[[19]]$theta, cpus = 4)
+
+# 0.0007624563
+
+# summary of document lengths
+doc_lengths <- rowSums(dtm)
+
+summary(doc_lengths)
+
+# what words are most associated with more than mean injured?
+
+# remove any tokens that were in 3 or fewer documents
+dtm2 <- dtm[ , colSums(dtm > 0) > 3 ]
+
+tf2 <- tf[ tf$term %in% colnames(dtm2) , ]
+
+# look at the most frequent bigrams
+tf_bigrams <- tf2[ stringr::str_detect(tf2$term, "_") , ]
+
+tf_bigrams <- tf_bigrams[ tf_bigrams$term %in% colnames(dtm2) , ]
+
+tf_meanantallskadet <- list(less = TermDocFreq(dtm[full_data$antall_skadet < 1.01 , ]),
+                            more = TermDocFreq(dtm[full_data$antall_skadet > 1.01 , ]))
+
+head(tf_meanantallskadet$less[ order(tf_meanantallskadet$less$term_freq, decreasing = TRUE) , ], 10)
+
+head(tf_meanantallskadet$more[ order(tf_meanantallskadet$more$term_freq, decreasing = TRUE) , ], 10)
+
+
+# let's reweight by probability by class
+p_words <- colSums(dtm) / sum(dtm) 
+
+tf_meanantallskadet$less$conditional_prob <- 
+  tf_meanantallskadet$less$term_freq / sum(tf_meanantallskadet$less$term_freq)
+
+tf_meanantallskadet$less$prob_lift <- tf_meanantallskadet$less$conditional_prob - p_words
+
+tf_meanantallskadet$more$conditional_prob <- 
+  tf_meanantallskadet$more$term_freq / sum(tf_meanantallskadet$more$term_freq)
+
+tf_meanantallskadet$more$prob_lift <- tf_meanantallskadet$more$conditional_prob - p_words
+
+# let's look again with new weights
+head(tf_meanantallskadet$less[ order(tf_meanantallskadet$less$prob_lift, decreasing = TRUE) , ], 10)
+
+head(tf_meanantallskadet$more[ order(tf_meanantallskadet$more$prob_lift, decreasing = TRUE) , ], 10)
+
+# what about bi-grams?
+tf_meanantallskadet_bigram <- lapply(tf_meanantallskadet, function(x){
+  x <- x[ stringr::str_detect(x$term, "_") , ]
+  x[ order(x$prob_lift, decreasing = TRUE) , ]
+})
+
+head(tf_meanantallskadet_bigram$less, 10)
+
+head(tf_meanantallskadet_bigram$more, 10)
+
+
+# Calculating cosine similarity and distance
+
+# TF-IDF and cosine similarity
+
+full_data_Corpus <-
+  Corpus(VectorSource(removePunctuation(full_data$ALL)))
+full_data_DTM <- DocumentTermMatrix(full_data_Corpus, 
+                                    control = list(weighting = "weightTfIdf", 
+                                                   removeNumbers = TRUE))
+
+
+full_data_DTM
+
+# Didn't prove very useful. I can't calculate the cosine distance/values
+# because of how large the data set is.
+
+# Get the top terms of each topic
+model$top_terms <- GetTopTerms(phi = model$phi, M = 5)
+
+model$top_terms
+
+# Get the prevalence of each topic
+# You can make this discrete by applying a threshold, say 0.05, for
+# topics in/out of docuemnts. 
+model$prevalence <- colSums(model$theta) / sum(model$theta) * 100
+
+# prevalence should be proportional to alpha
+plot(model$prevalence, model$alpha, xlab = "prevalence", ylab = "alpha")
+
+
+# textmineR has a naive topic labeling tool based on probable bigrams
+model$labels <- LabelTopics(assignments = model$theta > 0.05, 
+                            dtm = dtm,
+                            M = 1)
+
+head(model$labels)
+
+
+# put them together, with coherence into a summary table
+model$summary <- data.frame(topic = rownames(model$phi),
+                            label = model$labels,
+                            coherence = round(model$coherence, 3),
+                            prevalence = round(model$prevalence,3),
+                            top_terms = apply(model$top_terms, 2, function(x){
+                              paste(x, collapse = ", ")
+                            }),
+                            stringsAsFactors = FALSE)
+
+
+model$summary[ order(model$summary$prevalence, decreasing = TRUE) , ][ 1:10 , ]
+
+
+# predictions with gibbs
+assignments <- predict(model, dtm,
+                       method = "gibbs", 
+                       iterations = 200,
+                       burnin = 180,
+                       cpus = 2)
+
+# predictions with dot
+assignments_dot <- predict(model, dtm2,
+                           method = "dot")
+
+
+# compare
+barplot(rbind(assignments[10,], assignments_dot[10,]),
+        col = c("red", "blue"), las = 2, beside = TRUE)
+legend("topright", legend = c("gibbs", "dot"), col = c("red", "blue"), 
+       fill = c("red", "blue"))
+
+
 # Exporting top 20 terms
 
 write.csv(top20_wide, "top20_wide.csv")
@@ -1215,11 +1361,11 @@ write.csv(top20_wide, "top20_wide.csv")
 # Dendrogram for calculating similarities
   model$topic_linguistic_dist <- CalcHellingerDist(model$phi)
   
-  model$hclust <- hclust(as.dist(model$topic_linguistic_dist), "ward.D")
+  model$hclust <- hclust(as.dist(model$topic_linguistic_dist), "ward.D2")
   
   model$hclust$labels <- paste(model$hclust$labels, model$labels[ , 1])
   
-  plot(model$hclust)
+  plot(model$hclust, xlab = "Topic relationships", sub = "")
   
   #visualising topics of words based on the max value of phi
   
@@ -1245,6 +1391,7 @@ write.csv(top20_wide, "top20_wide.csv")
   
   word_topic_freq <- left_join(final_summary_words, original_tf, by = c("word" = "term"))
   
+  library(wordcloud)
   pdf("cluster.pdf")
   
   for(i in 1:length(unique(final_summary_words$topic)))
@@ -1256,8 +1403,12 @@ write.csv(top20_wide, "top20_wide.csv")
 # Single wordcloud
 
  wordcloud::wordcloud(words = subset(final_summary_words ,topic == 15)$word, freq = subset(final_summary_words ,topic == i)$value, min.freq = 1,
-            max.words=200, random.order=FALSE, rot.per=0.35, 
+            max.words=200, random.order=FALSE, rot.per=0.25, 
             colors=brewer.pal(8, "Dark2"))  
+ 
+ 
+
+ 
 # other stuff
   cleaned_full_data <- full_data %>%
     unnest_tokens(word, ALL) %>%
