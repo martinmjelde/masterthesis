@@ -88,7 +88,7 @@ top_terms_by_topic_LDA <-
     unique_indexes <-
       unique(DTM$i) # get the index of each unique value
     DTM <-
-      DTM[unique_indexes, ] # get a subset of only those indexes
+      DTM[unique_indexes,] # get a subset of only those indexes
     
     # preform LDA & get the words/topic in a tidy text format
     lda <-
@@ -100,7 +100,7 @@ top_terms_by_topic_LDA <-
       group_by(topic) %>% # treat each topic as a different group
       top_n(10, beta) %>% # get the top 10 most informative words
       ungroup() %>% # ungroup
-      arrange(topic, -beta) # arrange words in descending informativeness
+      arrange(topic,-beta) # arrange words in descending informativeness
     
     # if the user asks for a plot (TRUE by default)
     if (plot == T) {
@@ -109,8 +109,8 @@ top_terms_by_topic_LDA <-
         mutate(term = reorder(term, beta)) %>% # sort terms by beta value
         ggplot(aes(term, beta, fill = factor(topic))) + # plot beta by theme
         geom_col(show.legend = FALSE) + # as a bar plot
-        theme_bw() + 
-        facet_wrap( ~ topic, scales = "free") + # which each topic in a seperate plot
+        theme_bw() +
+        facet_wrap(~ topic, scales = "free") + # which each topic in a seperate plot
         labs(x = NULL, y = "Beta") + # no x label, change y label
         coord_flip() # turn bars sideways
     } else{
@@ -120,56 +120,57 @@ top_terms_by_topic_LDA <-
     }
   }
 
-top_terms_by_topic_tfidf <- function(text_df, text_column, group_column, plot = T){
-  # name for the column we're going to unnest_tokens_ to
-  # (you only need to worry about enquo stuff if you're
-  # writing a function using using tidyverse packages)
-  group_column <- enquo(group_column)
-  text_column <- enquo(text_column)
-  
-  # get the count of each word in each review
-  words <- text_df %>%
-    unnest_tokens(word, !!text_column) %>%
-    count(!!group_column, word) %>% 
-    ungroup()
-  
-  # get the number of words per text
-  total_words <- words %>% 
-    group_by(!!group_column) %>% 
-    summarize(total = sum(n))
-  
-  # combine the two dataframes we just made
-  words <- left_join(words, total_words)
-  
-  # get the tf_idf & order the words by degree of relevence
-  tf_idf <- words %>%
-    bind_tf_idf(word, !!group_column, n) %>%
-    select(-total) %>%
-    arrange(desc(tf_idf)) %>%
-    mutate(word = factor(word, levels = rev(unique(word))))
-  
-  if(plot == T){
-    # convert "group" into a quote of a name
-    # (this is due to funkiness with calling ggplot2
-    # in functions)
-    group_name <- quo_name(group_column)
+top_terms_by_topic_tfidf <-
+  function(text_df, text_column, group_column, plot = T) {
+    # name for the column we're going to unnest_tokens_ to
+    # (you only need to worry about enquo stuff if you're
+    # writing a function using using tidyverse packages)
+    group_column <- enquo(group_column)
+    text_column <- enquo(text_column)
     
-    # plot the 10 most informative terms per topic
-    tf_idf %>% 
-      group_by(!!group_column) %>% 
-      top_n(10) %>% 
-      ungroup %>%
-      ggplot(aes(word, tf_idf, fill = as.factor(group_name))) +
-      geom_col(show.legend = FALSE) +
-      theme_bw() +
-      labs(x = NULL, y = "tf-idf") +
-      facet_wrap(reformulate(group_name), scales = "free") +
-      coord_flip()
-  }else{
-    # return the entire tf_idf dataframe
-    return(tf_idf)
+    # get the count of each word in each review
+    words <- text_df %>%
+      unnest_tokens(word,!!text_column) %>%
+      count(!!group_column, word) %>%
+      ungroup()
+    
+    # get the number of words per text
+    total_words <- words %>%
+      group_by(!!group_column) %>%
+      summarize(total = sum(n))
+    
+    # combine the two dataframes we just made
+    words <- left_join(words, total_words)
+    
+    # get the tf_idf & order the words by degree of relevence
+    tf_idf <- words %>%
+      bind_tf_idf(word,!!group_column, n) %>%
+      select(-total) %>%
+      arrange(desc(tf_idf)) %>%
+      mutate(word = factor(word, levels = rev(unique(word))))
+    
+    if (plot == T) {
+      # convert "group" into a quote of a name
+      # (this is due to funkiness with calling ggplot2
+      # in functions)
+      group_name <- quo_name(group_column)
+      
+      # plot the 10 most informative terms per topic
+      tf_idf %>%
+        group_by(!!group_column) %>%
+        top_n(10) %>%
+        ungroup %>%
+        ggplot(aes(word, tf_idf, fill = as.factor(group_name))) +
+        geom_col(show.legend = FALSE) +
+        theme_bw() +
+        labs(x = NULL, y = "tf-idf") +
+        facet_wrap(reformulate(group_name), scales = "free") +
+        coord_flip()
+    } else{
+      # return the entire tf_idf dataframe
+      return(tf_idf)
+    }
   }
-}
 
 
 #### Importing data ####
@@ -222,10 +223,11 @@ readr::spec(årsak)
 person <-
   read_csv(
     "~/Master/delt_opp/person.csv",
-    col_types = cols(pusulykkenummer = col_character(),
-                     yrkeskodefisker = col_character(),
-                     yrkeskodefisker_kode = col_character()
-                     )
+    col_types = cols(
+      pusulykkenummer = col_character(),
+      yrkeskodefisker = col_character(),
+      yrkeskodefisker_kode = col_character()
+    )
   )
 readr::spec(person)
 
@@ -250,10 +252,8 @@ readr::spec(tilrådningstiltak)
 
 # Ulykke
 ulykke <-
-  read_csv(
-    "~/Master/delt_opp/ulykke.csv",
-    col_types = cols(posisjon_breddegrad = col_character())
-  )
+  read_csv("~/Master/delt_opp/ulykke.csv",
+           col_types = cols(posisjon_breddegrad = col_character()))
 readr::spec(ulykke)
 
 # ÅrsakDetalj
@@ -263,6 +263,206 @@ readr::spec(årsaksdetalj)
 
 # Commands that might prove useful:
 readr::tokenizer_csv()
+
+
+
+#### Creating a new variable of free text fields ####
+
+# Concatenating the free text fields, most of which are from årsak.
+# In order to do that, we need to merge some data sets. We find the variables
+# that are shared in order to sort by the same variables.
+
+intersect(x = labels(årsak)[[2]], y = labels(årsaksdetalj)[[2]])
+
+# Årsaks-ID
+sum(table(intersect(årsak$årsak_id,  årsaksdetalj$årsak_id)))
+
+# Fartøy-ID
+sum(table(intersect(årsak$fartøy_id,  årsaksdetalj$fartøy_id)))
+
+# Ulykke-ID
+sum(table(intersect(årsak$ulykke_id,  årsaksdetalj$ulykke_id)))
+
+# Person-ID
+sum(table(intersect(årsak$ulykke_id,  årsaksdetalj$ulykke_id)))
+
+# Using full_join, all values that exist in either dataset x or y is included.
+
+årsak_with_detail <- full_join(
+  x =  årsak,
+  y =  årsaksdetalj,
+  by = "årsak_id",
+  keep = FALSE
+)
+
+# The variable årsak_id is the one with the most shared values, so we'll use
+# that one to concatenate the data sets
+
+table(årsak$årsak_id %in%  årsaksdetalj$årsak_id)
+
+# 24 of the årsaks_ids in årsaksdetalj are not present in årsak.
+
+table(årsak_with_detail$årsak_id %in%  årsak$årsak_id)
+
+# But in the new data set årsak_with_detail, some of the IDs are repeated.
+# That's why we get 28105 results here, when the initial results were lower
+
+# But a lot of the årsak_ids are repeated, presumably because of multiple
+# registrations per cause, one per person. This is the case in årsaksdetalj,
+# and is also the case for person_id, but much more so in årsaksdetalj.
+
+table(duplicated(årsak$årsak_id))
+table(duplicated(årsaksdetalj$årsak_id))
+
+# person_id
+table(duplicated(årsak$person_id))
+table(duplicated(årsaksdetalj$person_id))
+
+# We're gonna check which grouping variables are present in both datasets:
+
+intersect(x = labels(årsak_with_detail)[[2]], y = labels(ulykke)[[2]])
+
+# No variables are repeated, which seems strange. A manual check is in order
+labels(årsak_with_detail)[[2]]
+labels(ulykke)[[2]]
+
+grep("_id", labels(ulykke)[[2]])
+# Only one label with the suffix _id, ulykke_id. This is also present in
+# årsak_with_detail, but it is based on a previous dataset.
+
+table(årsak_with_detail$ulykke_id.x %in% ulykke$ulykke_id)
+table(årsak_with_detail$ulykke_id.y %in% ulykke$ulykke_id)
+
+# So 28105 of the ulykke_ids in the combined dataset is present in the ulykke
+# dataset.
+
+årsak_with_detail$ulykke_id <- årsak_with_detail$ulykke_id.x
+
+# We'll make that our new grouping variable
+
+full_data <-
+  full_join(
+    x =  årsak_with_detail,
+    y = ulykke,
+    by = 'ulykke_id',
+    keep = FALSE
+  )
+
+# We see that we now have 48907 cases and none of them are NA. This number is
+# the amount of cases in the dataset with the most different årsak_ids.
+table(complete.cases(full_data$ulykke_id))
+
+sum(table(intersect(
+  full_data$ulykke_id, ulykke$ulykke_id)))
+
+# The intersect of the årsak_ids is the årsak_ids that are repeated in both data
+# sets, both årsak_with_detail and årsak.
+
+table(duplicated(full_data$ulykke_id))
+
+# 11071 of the cases are duplicated. That's about the same as before we merged
+# them, but it stems from when we concatenated the cases, we wanted to only keep
+# unique values, so in the case of non-uniques, they were dropped and we were
+# able to drop them.
+
+
+# Our new data set has 48907 complete cases and no NA values present. This might
+# be considered a little strange, as the data set ulykke "only" has 37836 cases,
+# but this is because of the full_join function, where some of the cases were
+# not present in one or the other data sets.
+
+intersect(x = labels(full_data)[[2]], y = labels(person)[[2]])
+
+full_data <-
+  full_join(x = full_data,
+            y = person,
+            by = 'ulykke_id',
+            keep = FALSE)
+
+table(duplicated(full_data$ulykke_id))
+
+# 37836 cases are not repeated
+
+intersect(x = labels(full_data)[[2]], y = labels(personskade)[[2]])
+
+# We have not worked with person_id before, so let's take a look at it.
+
+table(complete.cases(full_data$person_id))
+table(duplicated(full_data$person_id))
+
+table(personskade$person_id %in% full_data$person_id)
+
+# 39615 cases from person_id in the personskade-dataset is available in
+# full_data, which is also the full extent of the person_ids.
+
+full_data <-
+  full_join(x = full_data,
+            y = personskade,
+            by = 'person_id',
+            keep = FALSE)
+
+
+# Before we merge the free-text fields, let's have a look at which grouping
+# variable we should use.
+
+table(duplicated(full_data$ulykke_id))
+table(duplicated(full_data$person_id))
+table(duplicated(full_data$årsak_id))
+
+# We quickly see that ulykke_id is the one that's duplicated the least, meaning
+# that we should be able to use this one to group the following part
+
+full_data <- full_data %>%
+  pivot_longer(
+    cols = c(
+      direkteårsak_person_fritekst,
+      direkteårsak_ytre_fritekst,
+      direkteårsak_utstyr_fritekst,
+      indirekteårsak_person_fritekst,
+      indirekteårsak_arbeidsmiljø_fritekst,
+      indirekteårsak_ytre_fritekst,
+      indirekteårsak_utstyr_fritekst,
+      bakenforårsak_ledelse_fritekst,
+      bakenforårsak_prosedyre_fritekst,
+      fritekst,
+      hendelsesforløp,
+      personskade,
+      annenskade
+    ),
+    values_drop_na = TRUE
+  ) %>%
+  group_by(ulykke_id) %>%
+  summarise(ALL = str_squish(toString(unique(value)))) %>%
+  inner_join(full_data)
+
+# We ended up on a total of 79800 observations.
+
+head(full_data$ALL)
+
+# Some of them are repeated, so we'll just remove those instances.
+
+full_data <- full_data[!duplicated(full_data$ALL), ]
+
+head(full_data$ALL)
+
+table(duplicated(full_data$ulykke_id))
+
+# We ended up with 37830 observations, of which none of the ulykke_ids are
+# repeated. In total we lost 6 observations from the ulykke dataset, but that's 
+# not an issue.
+
+# Removing datasets we combined to save some space.
+
+rm(årsak)
+rm(årsak_with_detail)
+rm(årsaksdetalj)
+rm(person)
+rm(personskade)
+rm(personverneutstyr)
+rm(tilrådningstiltak)
+rm(ulykke)
+
+gc()
 
 #### Descriptive statistics ####
 # Using a colorblind palette for the graphs, so
@@ -283,99 +483,14 @@ safe_colorblind_palette <-
     "#888888"
   )
 
-#### Creating a new variable of free text fields ####
-
-# Concatenating the free text fields, most of which are from årsak.
-
-årsak_with_detail <- full_join(x = årsak, y = årsaksdetalj, by = "årsak_id", keep = TRUE)
-årsak_with_detail$årsak_id <- årsak_with_detail$årsak_id.x
-
-# Using full_join, all values that exist in either dataset x or y is included.
-
-årsak_with_detail <- årsak_with_detail %>%
-  pivot_longer(
-    cols = c(direkteårsak_person_fritekst,
-             direkteårsak_ytre_fritekst,
-             direkteårsak_utstyr_fritekst,
-             indirekteårsak_person_fritekst,
-             indirekteårsak_arbeidsmiljø_fritekst,
-             indirekteårsak_ytre_fritekst,
-             indirekteårsak_utstyr_fritekst,
-             bakenforårsak_ledelse_fritekst,
-             bakenforårsak_prosedyre_fritekst, 
-             fritekst),
-    values_drop_na = FALSE
-  ) %>%
-  group_by(årsak_id) %>%
-  summarise(ALL = toString(unique(value))) %>%
-  full_join(årsak)
-
-# Add hendelsesforløp
-full_data <- full_join(x = årsak_with_detail, y = ulykke, by = 'ulykke_id', keep = TRUE)
-
-full_data$ulykke_id <- full_data$ulykke_id.x
-
-# Continue here, add person$personskade and keep uniques
-
-full_data <- full_data %>%
-  pivot_longer(
-    cols = c(hendelsesforløp, 
-             ALL),
-    values_drop_na = FALSE
-  ) %>%
-  group_by(ulykke_id) %>% 
-  summarise(ALL = toString(unique(value))) %>%
-  full_join(full_data)
-
-full_data <- full_join(x = full_data, y = person, by = 'person_id', keep = TRUE)
-
-full_data$ulykke_id <- full_data$ulykke_id.x
-
-full_data <- full_data %>%
-  pivot_longer(
-    cols = c(personskade, 
-             ALL),
-    values_drop_na = FALSE
-  ) %>%
-  group_by(ulykke_id) %>% 
-  summarise(ALL = toString(unique(value))) %>%
-  full_join(full_data)
-
-
-full_data$person_id <- full_data$person_id.x
-
-full_data <- full_join(x = full_data, y = personskade, by = 'person_id', keep = TRUE)
-
-full_data <- full_data %>%
-  pivot_longer(
-    cols = c(annenskade, 
-             ALL),
-    values_drop_na = FALSE
-  ) %>%
-  group_by(ulykke_id) %>% 
-  summarise(ALL = toString(unique(value))) %>%
-  full_join(full_data)
-
-# Removing datasets we combined to save some space.
-
-rm(årsak)
-rm(årsak_with_detail)
-rm(årsaksdetalj)
-rm(person)
-rm(personskade)
-rm(personverneutstyr)
-rm(tilrådningstiltak)
-
 ## By year
 library(chron)
 
 a <- mean(table(format(years(
-  as.Date(ulykke$ulykkedato, format = "%d.%m.%Y")))))
+  as.Date(full_data$ulykkedato, format = "%d.%m.%Y")
+))))
 
-a <- mean(table(format(years(
-  as.Date(ulykke$ulykkedato, format = "%d.%m.%Y")))))
-
-ulykke %>%
+full_data %>%
   mutate(ulykkesår = format((years(
     as.Date(ulykkedato, format = "%d.%m.%Y")
   ))))  %>%
@@ -398,34 +513,126 @@ ulykke %>%
     legend.position = "bottom"
   ) +
   geom_hline(yintercept = a, color = safe_colorblind_palette[2]) +
-  geom_label(aes(x = 1, y = a, label = paste("Mean =", round(a))), nudge_x = 3.1, nudge_y = 50, size = 5, family = "Times")+
+  geom_label(
+    aes(
+      x = 1,
+      y = a,
+      label = paste("Mean =", round(a))
+    ),
+    nudge_x = 3.1,
+    nudge_y = 50,
+    size = 5,
+    family = "Times"
+  ) +
   scale_y_continuous(breaks = seq(0, 2000, by = 250)) +
   labs(
     x = "Year",
     y = "Number of entries per year",
-    title = paste0("Reported accidents in Sdir's dataset. N = ", nrow(ulykke[!is.na(ulykke$ulykkedato), ]))
+    title = paste0("Reported accidents in Sdir's dataset. N = ", nrow(full_data[!is.na(full_data$ulykkedato),]))
   ) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
 rm(a)
 
 ## By month
-month.name <- as.factor(month.name)
+month_name <-
+  factor(
+    month.name,
+    ordered = TRUE, 
+    levels = c(
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December"
+    )
+  )
 
-full_data$ulykkesmåned <- str_squish(format(factor(months(
-  as.Date(full_data$ulykkedato, format = "%d.%m.%Y")
-))))
-full_data$ulykkesmåned
+# Setting the date format to English rather than Norwegian
+
+Sys.setlocale("LC_TIME", "English")
+
+full_data$ulykkedato2 <-
+  as.POSIXct(full_data$ulykkedato, format = "%d.%m.%Y")
+
+full_data$ulykkesmåned <- months(full_data$ulykkedato2)
+
+full_data$ulykkesmåned <- factor(
+  full_data$ulykkesmåned,
+  ordered = TRUE,
+  levels = c(
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December"
+  )
+)
+
 a <- mean(table(full_data$ulykkesmåned))
 
+ggplot(full_data,
+       aes(ulykkesmåned)) +
+  geom_bar() +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title.x = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  scale_y_continuous(breaks = seq(0, 4000, by = 500)) +
+  geom_hline(yintercept = a) +
+  geom_label(
+    aes(
+      x = 0,
+      y = a,
+      label = paste("Mean =", round(a))
+    ),
+    nudge_x = 6.5,
+    nudge_y = 110,
+    size = 5
+  ) +
+  labs(
+    x = "Month",
+    y = "Number of entries per month",
+    title = paste(
+      "Reported accidents (1981-2022) in Sdir's dataset. N = ",
+      nrow(full_data[!is.na(full_data$ulykkedato),])
+    )
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+
+# I just added it manually. Might create a prettier solution later.
+rm(a)
+
+# How many injured and dead
 
 ulykke %>%
-  mutate(ulykkesmåned = str_squish(format((months(
-    as.Date(ulykkedato, format = "%d.%m.%Y")
-  )))))  %>%
-  count(ulykkesmåned) %>%
-  mutate(ulykkesmåned = factor(ulykkesmåned, levels = month.name)) %>%
-  ggplot(aes(ulykkesmåned, n)) +
+  count(antall_skadet) %>%
+  ggplot(aes(antall_skadet, n)) +
   geom_col() +
   theme_bw() +
   theme(
@@ -442,58 +649,25 @@ ulykke %>%
     axis.title = element_text(size = 10),
     legend.position = "bottom"
   ) +
-  #scale_y_continuous(breaks = seq(0, 4000, by = 500)) +
-  geom_hline(yintercept = a)+
-  geom_label(aes(x = 0, y = a, label = paste("Mean =", round(a))), nudge_x = 6.5, nudge_y = 110, size = 5, family = "Times")+
-  labs(
-    x = "Month",
-    y = "Number of entries per month",
-    title = paste0(
-      "Reported accidents (1981-2022) in Sdir's dataset. N = ",
-      nrow(full_data[!is.na(full_data$ulykkedato), ])
-    )
-  ) +
-  scale_fill_manual(values = c(safe_colorblind_palette))
-
-# I just added it manually. Might create a prettier solution later.
-rm(a)
-
-# How many injured and dead
-
-ulykke %>% 
-  count(antall_skadet) %>%
-  ggplot(aes(antall_skadet, n))+
-  geom_col()+
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(
-      angle = 60,
-      size = 10,
-      vjust = 1,
-      hjust = 1,
-      color = "black"
-    ),
-    axis.text.y = element_text(size = 10),
-    axis.title.y = element_text(size = 12.5),
-    axis.title.x = element_text(size = 12.5),
-    axis.title = element_text(size = 10),
-    legend.position = "bottom"
-  ) +
-  labs(
-    x = "Injured people per accident report",
-    y = "Count",
-    title = "Frequency of injured people from each report"
-  ) +
+  labs(x = "Injured people per accident report",
+       y = "Count",
+       title = "Frequency of injured people from each report") +
   scale_x_continuous(breaks = seq(0, 75, by = 5)) +
-  geom_text(aes(label = n), nudge_y = 1000, nudge_x = -0.2, angle = 90, size = 3)+
+  geom_text(
+    aes(label = n),
+    nudge_y = 1000,
+    nudge_x = -0.2,
+    angle = 90,
+    size = 3
+  ) +
   scale_fill_manual(values = c(safe_colorblind_palette))
-  
+
 # Only deceased
 
-ulykke %>% 
+ulykke %>%
   count(antall_omkommet) %>%
-  ggplot(aes(antall_omkommet, n, label = antall_omkommet))+
-  geom_col()+
+  ggplot(aes(antall_omkommet, n, label = antall_omkommet)) +
+  geom_col() +
   theme_bw() +
   theme(
     axis.text.x = element_text(
@@ -509,20 +683,18 @@ ulykke %>%
     axis.title = element_text(size = 10),
     legend.position = "bottom"
   ) +
-  labs(
-    x = "Number of deceased people",
-    y = "Count",
-    title = "Distribution of deceased people from each report"
-  ) +
+  labs(x = "Number of deceased people",
+       y = "Count",
+       title = "Distribution of deceased people from each report") +
   scale_x_continuous(breaks = seq(0, 20, by = 1)) +
-  geom_text(aes(label = n), nudge_y = 600)+
+  geom_text(aes(label = n), nudge_y = 600) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
-ulykke %>% 
+ulykke %>%
   mutate(antall_antatt_døde = as.numeric(antall_savnet) + as.numeric(antall_omkommet)) %>%
   count(antall_antatt_døde) %>%
-  ggplot(aes(antall_antatt_døde, n))+
-  geom_col()+
+  ggplot(aes(antall_antatt_døde, n)) +
+  geom_col() +
   theme_bw() +
   theme(
     axis.text.x = element_text(
@@ -538,13 +710,11 @@ ulykke %>%
     axis.title = element_text(size = 10),
     legend.position = "bottom"
   ) +
-  labs(
-    x = "Number of deceased or missing",
-    y = "Count",
-    title = "Distribution of deceased or missing people from each report"
-  ) +
+  labs(x = "Number of deceased or missing",
+       y = "Count",
+       title = "Distribution of deceased or missing people from each report") +
   scale_x_continuous(breaks = seq(0, 20, by = 1)) +
-  geom_text(aes(label = n), nudge_y = 500)+
+  geom_text(aes(label = n), nudge_y = 500) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
 # Also done with "ulykke"
@@ -558,11 +728,21 @@ rm(ulykke)
 
 
 
-full_data <- full_data %>%
+full_data1 <- full_data %>%
   filter(!is.na(ALL)) %>%
   select(ALL, antall_skadet, antall_omkommet) %>%
-  mutate(ALL_cleaned = str_replace_all(string = ALL, pattern =  "\n", replacement = "")) %>%
-  mutate(ALL_cleaned2 = str_squish(removePunctuation(ALL_cleaned, preserve_intra_word_contractions = T, preserve_intra_word_dashes = T))) %>%
+  mutate(ALL_cleaned = str_replace_all(
+    string = ALL,
+    pattern =  "\n",
+    replacement = ""
+  )) %>%
+  mutate(ALL_cleaned2 = str_squish(
+    removePunctuation(
+      ALL_cleaned,
+      preserve_intra_word_contractions = T,
+      preserve_intra_word_dashes = T
+    )
+  )) %>%
   select(ALL_cleaned2, antall_skadet, antall_omkommet) %>%
   rename(c("ALL" = "ALL_cleaned2"))
 
@@ -625,7 +805,11 @@ full_data %>%
 # small_data <- full_data[!is.na(full_data$antall_skadet),]
 
 full_data <- full_data %>%
-  mutate(ALL = str_replace_all(string = ALL, pattern =  "NA", replacement = "")) %>%
+  mutate(ALL = str_replace_all(
+    string = ALL,
+    pattern =  "NA",
+    replacement = ""
+  )) %>%
   mutate(ALL = str_squish(ALL))
 
 # The algorithm can't handle missing values, so we're editing them to 0
@@ -646,7 +830,8 @@ library(textrecipes)
 
 # We can add more predictors here, such as
 
-full_data_rec <- recipe(antall_skadet ~ ALL, data = full_data_train) %>%
+full_data_rec <-
+  recipe(antall_skadet ~ ALL, data = full_data_train) %>%
   step_tokenize(ALL) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
@@ -693,7 +878,7 @@ svm_fit %>%
   tidy() %>%
   arrange(estimate)
 
-# Creating folds to validate 
+# Creating folds to validate
 
 set.seed(123)
 full_data_folds <- vfold_cv(full_data_train)
@@ -703,11 +888,9 @@ full_data_folds
 # Resampling - rs = resample here
 
 set.seed(123)
-svm_rs <- fit_resamples(
-  full_data_wf %>% add_model(svm_spec),
-  full_data_folds,
-  control = control_resamples(save_pred = TRUE)
-)
+svm_rs <- fit_resamples(full_data_wf %>% add_model(svm_spec),
+                        full_data_folds,
+                        control = control_resamples(save_pred = TRUE))
 
 svm_rs
 
@@ -724,8 +907,8 @@ svm_rs %>%
     color = NULL,
     title = "Predicted and true number of injured, linear SVM",
     subtitle = "Each cross-validation fold is shown in a different color"
-  )+
-  theme_bw()+
+  ) +
+  theme_bw() +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
 # Removing the outlier #10
@@ -742,8 +925,8 @@ svm_rs %>%
     title = "Predicted and true number of injured, linear SVM",
     subtitle = "Each cross-validation fold is shown in a different color"
   ) +
-  theme_bw()+
-  scale_fill_manual(values = c(safe_colorblind_palette))+
+  theme_bw() +
+  scale_fill_manual(values = c(safe_colorblind_palette)) +
   xlim(0, 22)
 
 
@@ -753,11 +936,9 @@ null_regression <- null_model() %>%
   set_engine("parsnip") %>%
   set_mode("regression")
 
-null_rs <- fit_resamples(
-  full_data_wf %>% add_model(null_regression),
-  full_data_folds,
-  metrics = metric_set(rmse)
-)
+null_rs <- fit_resamples(full_data_wf %>% add_model(null_regression),
+                         full_data_folds,
+                         metrics = metric_set(rmse))
 
 null_rs
 
@@ -779,11 +960,9 @@ rf_spec <- rand_forest(trees = 100) %>%
 
 rf_spec
 
-rf_rs <- fit_resamples(
-  full_data_wf %>% add_model(rf_spec),
-  full_data_folds,
-  control = control_resamples(save_pred = TRUE)
-)
+rf_rs <- fit_resamples(full_data_wf %>% add_model(rf_spec),
+                       full_data_folds,
+                       control = control_resamples(save_pred = TRUE))
 
 collect_metrics(rf_rs)
 
@@ -798,7 +977,7 @@ collect_predictions(rf_rs) %>%
     color = NULL,
     title = "Predicted and true number of injured people using, a random forest model",
     subtitle = "Each cross-validation fold is shown in a different color, using 1000 trees"
-  )+
+  ) +
   #xlim(0,22)+
   theme_bw()
 
@@ -818,10 +997,8 @@ svm_wf <- workflow() %>%
   add_model(svm_spec)
 
 fit_ngram <- function(ngram_options) {
-  fit_resamples(
-    svm_wf %>% add_recipe(ngram_rec(ngram_options)),
-    full_data_folds
-  )
+  fit_resamples(svm_wf %>% add_recipe(ngram_rec(ngram_options)),
+                full_data_folds)
 }
 
 # Seeing the differences between uni-, bi- and trigrams for SVM
@@ -838,16 +1015,18 @@ trigram_rs <- fit_ngram(list(n = 3, n_min = 1))
 set.seed(567)
 quadgram_rs <- fit_ngram(list(n = 3, n_min = 1))
 
-list(`1` = unigram_rs,
-     `1 and 2` = bigram_rs,
-     `1, 2, and 3` = trigram_rs,
-     `1, 2, 3 and 4` = quadgram_rs) %>%
+list(
+  `1` = unigram_rs,
+  `1 and 2` = bigram_rs,
+  `1, 2, and 3` = trigram_rs,
+  `1, 2, 3 and 4` = quadgram_rs
+) %>%
   map_dfr(collect_metrics, .id = "name") %>%
   filter(.metric == "rmse") %>%
   ggplot(aes(name, mean, color = name)) +
   geom_crossbar(aes(ymin = mean - std_err, ymax = mean + std_err), alpha = 0.6) +
   geom_point(size = 3, alpha = 0.8) +
-  theme_bw()+
+  theme_bw() +
   theme(legend.position = "none") +
   labs(
     x = "Degree of n-grams",
@@ -889,10 +1068,8 @@ tune_wf <- workflow() %>%
 
 tune_wf
 
-final_grid <- grid_regular(
-  max_tokens(range = c(1e3, 6e3)),
-  levels = 6
-)
+final_grid <- grid_regular(max_tokens(range = c(1e3, 6e3)),
+                           levels = 6)
 
 final_grid
 
@@ -912,13 +1089,11 @@ final_rs %>%
   ggplot(aes(max_tokens, mean, color = .metric)) +
   geom_line(size = 1.5, alpha = 0.5) +
   geom_point(size = 2, alpha = 0.9) +
-  facet_wrap(~.metric, scales = "free_y", ncol = 1) +
+  facet_wrap( ~ .metric, scales = "free_y", ncol = 1) +
   theme(legend.position = "none") +
-  labs(
-    x = "Number of tokens",
-    title = "Linear SVM performance across number of tokens",
-    subtitle = "Performance improves as we include more tokens"
-  )
+  labs(x = "Number of tokens",
+       title = "Linear SVM performance across number of tokens",
+       subtitle = "Performance improves as we include more tokens")
 
 chosen_mae <- final_rs %>%
   select_by_pct_loss(metric = "mae", max_tokens, limit = 3)
@@ -942,28 +1117,36 @@ full_data_fit %>%
   filter(term != "Bias") %>%
   #filter(term != "fartøyets") %>%
   mutate(
-    sign = case_when(estimate > 0 ~ "More (than mean injured)",
-                     TRUE ~ "Less (than mean injured)"),
+    sign = case_when(
+      estimate > 0 ~ "More (than mean injured)",
+      TRUE ~ "Less (than mean injured)"
+    ),
     estimate = abs(estimate),
     term = str_remove_all(term, "tfidf_ALL_")
   ) %>%
   group_by(sign) %>%
   top_n(20, estimate) %>%
   ungroup() %>%
-  ggplot(aes(x = estimate,
-             y = fct_reorder(term, estimate),
-             fill = sign)) +
+  ggplot(aes(
+    x = estimate,
+    y = fct_reorder(term, estimate),
+    fill = sign
+  )) +
   geom_col(show.legend = FALSE) +
   scale_x_continuous(expand = c(0, 0)) +
-  facet_wrap(~sign, scales = "free") +
+  facet_wrap( ~ sign, scales = "free") +
   labs(
     y = NULL,
-    title = paste("Variable importance for predicting amount of",
-                  "injured people in accident reports"),
-    subtitle = paste("These features are the most importance",
-                     "in predicting the amount of injured")
-  )+
-  theme_bw()+
+    title = paste(
+      "Variable importance for predicting amount of",
+      "injured people in accident reports"
+    ),
+    subtitle = paste(
+      "These features are the most importance",
+      "in predicting the amount of injured"
+    )
+  ) +
+  theme_bw() +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
 final_fitted %>%
@@ -974,11 +1157,13 @@ final_fitted %>%
   labs(
     x = "Actual",
     y = "Predicted amount of injured people",
-    title = paste("Predicted and actual amount of injured for the testing set of",
-                  "accident reports"),
+    title = paste(
+      "Predicted and actual amount of injured for the testing set of",
+      "accident reports"
+    ),
     subtitle = "For the testing set, predictions are most accurate between 0-5 injured"
   ) +
-  scale_x_continuous(breaks = seq(0,22, by = 1))+
+  scale_x_continuous(breaks = seq(0, 22, by = 1)) +
   theme_bw()
 
 full_data_bind <- collect_predictions(final_fitted) %>%
@@ -1005,7 +1190,8 @@ full_data_DTM_tidy <- tidy(full_data_DTM)
 # very informative in these reports
 custom_words
 
-norwegian_stop_words <- rbind(tibble(word = tm::stopwords(kind = "no")), tibble(word = custom_words))
+norwegian_stop_words <-
+  rbind(tibble(word = tm::stopwords(kind = "no")), tibble(word = custom_words))
 
 
 # remove stopwords
@@ -1058,21 +1244,23 @@ full_data$ulykketype[is.na(full_data$ulykketype)] <- "Ukjent"
 
 
 
-tfidf_bygroup_ALL <- top_terms_by_topic_tfidf(text_df = full_data, 
-                                                  text_column = ALL, 
-                                                  group = ulykketype, 
-                                                  plot = F)
+tfidf_bygroup_ALL <- top_terms_by_topic_tfidf(
+  text_df = full_data,
+  text_column = ALL,
+  group = ulykketype,
+  plot = F
+)
 
 # do our own plotting
-tfidf_bygroup_ALL  %>% 
-  group_by(ulykketype) %>% 
-  top_n(5) %>% 
+tfidf_bygroup_ALL  %>%
+  group_by(ulykketype) %>%
+  top_n(5) %>%
   ungroup %>%
   ggplot(aes(word, tf_idf, fill = ulykketype)) +
   geom_col(show.legend = FALSE) +
   labs(x = NULL, y = "tf-idf") +
-  theme_bw()+
-  facet_wrap(~ulykketype, ncol = 4, scales = "free", ) +
+  theme_bw() +
+  facet_wrap( ~ ulykketype, ncol = 4, scales = "free",) +
   coord_flip()
 
 
@@ -1081,19 +1269,22 @@ tfidf_bygroup_ALL  %>%
 #### n-grams ####
 # not finished
 
-full_data %>% 
-  unnest_tokens(word, ALL, token = "ngrams", n = 2) %>% 
+full_data %>%
+  unnest_tokens(word, ALL, token = "ngrams", n = 2) %>%
   filter(!is.na(word)) %>%
-  separate(word, c("word1", "word2"), sep = " ") %>% 
+  separate(word, c("word1", "word2"), sep = " ") %>%
   filter(!word1 %in% stop_words$word) %>%
   filter(!word2 %in% stop_words$word) %>%
   filter(!word1 %in% norwegian_stop_words$word) %>%
   filter(!word2 %in% norwegian_stop_words$word) %>%
-  unite(word, word1, word2, sep = " ") %>% 
-  count(word, sort = TRUE) %>% 
-  slice(1:10) %>% 
-  ggplot() + 
-  geom_bar(aes(word, n), stat = "identity", fill = "#de5833", position = "dodge") +
+  unite(word, word1, word2, sep = " ") %>%
+  count(word, sort = TRUE) %>%
+  slice(1:10) %>%
+  ggplot() +
+  geom_bar(aes(word, n),
+           stat = "identity",
+           fill = "#de5833",
+           position = "dodge") +
   theme_bw() +
   coord_flip() +
   labs(title = "Top Bigrams of accident reports, using all free text fields")
@@ -1119,35 +1310,35 @@ full_data %>%
   count(sentiment) %>% # count the # of positive & negative words
   spread(sentiment, n, fill = 0) %>% # made data wide rather than narrow
   mutate(sentiment = positive - negative) # of positive words - # of negative words
-  ggplot(sentiments, aes(x = as.numeric(ulykkesår), y = sentiment)) + 
-  geom_point(aes(color = ulykkesår))+ # add points to our plot, color-coded by president
+ggplot(sentiments, aes(x = as.numeric(ulykkesår), y = sentiment)) +
+  geom_point(aes(color = ulykkesår)) + # add points to our plot, color-coded by president
   geom_smooth(method = "auto") # pick a method & fit a model
-  
-  
-  small_data <- full_data[!is.na(full_data$ALL),]
-  
-  small_data <- small_data %>%
-    unnest_tokens(word, ALL) %>%
-    anti_join(get_stopwords("no")) %>%
-    anti_join(get_stopwords("en")) %>%
-    filter(!word %in% custom_words)
-  
-  ## https://towardsdatascience.com/beginners-guide-to-lda-topic-modelling-with-r-e57a5a8e7a25
- 
-# Doesn't work, probably not necessary tho. 
-  
+
+
+small_data <- full_data[!is.na(full_data$ALL), ]
+
+small_data <- small_data %>%
+  unnest_tokens(word, ALL) %>%
+  anti_join(get_stopwords("no")) %>%
+  anti_join(get_stopwords("en")) %>%
+  filter(!word %in% custom_words)
+
+## https://towardsdatascience.com/beginners-guide-to-lda-topic-modelling-with-r-e57a5a8e7a25
+
+# Doesn't work, probably not necessary tho.
+
 #   small_data <- small_data %>%
 #     mutate(ID = row_number())
-#   
+#
 # small_data <- small_data %>% mutate(ind = row_number())
-# 
+#
 # small_data <- small_data %>%
 #     tidyr::pivot_wider(key = ID, value = ALL)
-# 
+#
 # small_data [is.na(small_data)] <- ""
-# 
+#
 # small_data <- tidyr::unite(small_data, text,-ID,sep =" " )
-# 
+#
 # small_data$word <- trimws(small_data$word)
 
 #create DTM
@@ -1155,43 +1346,63 @@ library(textmineR)
 dtm <- CreateDtm(small_data$word,
                  ngram_window = c(1, 3))
 #, stem_lemma_function = function(x) SnowballC::wordStem(x, language = "norwegian"
-  
+
 tf <- TermDocFreq(dtm = dtm)
-  
-original_tf <- tf %>% select(term, term_freq,doc_freq)
-  
-original_tf <- rowid_to_column(original_tf, var = "rowid") # Eliminate words appearing less than 2 times or in more than half of the
-  # documents
-vocabulary <- tf$term[ tf$term_freq > 1 & tf$doc_freq < nrow(dtm) / 2 ]
-  
+
+original_tf <- tf %>% select(term, term_freq, doc_freq)
+
+original_tf <-
+  rowid_to_column(original_tf, var = "rowid") # Eliminate words appearing less than 2 times or in more than half of the
+# documents
+vocabulary <-
+  tf$term[tf$term_freq > 1 & tf$doc_freq < nrow(dtm) / 2]
+
 k_list <- seq(1, 20, by = 1)
 setwd("~/Master/masterthesis")
 
-model_dir <- paste0("models_", digest::digest(vocabulary, algo = "sha1"))
-if(!dir.exists(model_dir)) dir.create(model_dir)
-  
+model_dir <-
+  paste0("models_", digest::digest(vocabulary, algo = "sha1"))
+if (!dir.exists(model_dir))
+  dir.create(model_dir)
+
 library(parallel)
-model_list <- TmParallelApply(cpus = 4, X = k_list, FUN = function(k){
-    filename = file.path(model_dir, paste0(k, "_topics.rda"))
-    
-if(!file.exists(filename)) {
-      m <- FitLdaModel(dtm = dtm, k = k, iterations = 500)
-      m$k <- k
-      m$coherence <- CalcProbCoherence(phi = m$phi, dtm = dtm, M = 5)
-      save(m, file = filename)
-    } else {
-      load(filename)
-    }
-    
-    m
-  }, export=c("dtm", "model_dir")) # export only needed for Windows machines
+model_list <-
+  TmParallelApply(
+    cpus = 4,
+    X = k_list,
+    FUN = function(k) {
+      filename = file.path(model_dir, paste0(k, "_topics.rda"))
+      
+      if (!file.exists(filename)) {
+        m <- FitLdaModel(dtm = dtm,
+                         k = k,
+                         iterations = 500)
+        m$k <- k
+        m$coherence <-
+          CalcProbCoherence(phi = m$phi,
+                            dtm = dtm,
+                            M = 5)
+        save(m, file = filename)
+      } else {
+        load(filename)
+      }
+      
+      m
+    },
+    export = c("dtm", "model_dir")
+  ) # export only needed for Windows machines
 
 #model tuning
-  
+
 #choosing the best model
-coherence_mat <- data.frame(k = sapply(model_list, function(x) nrow(x$phi)), 
-                              coherence = sapply(model_list, function(x) mean(x$coherence)), 
-                              stringsAsFactors = FALSE)
+coherence_mat <-
+  data.frame(
+    k = sapply(model_list, function(x)
+      nrow(x$phi)),
+    coherence = sapply(model_list, function(x)
+      mean(x$coherence)),
+    stringsAsFactors = FALSE
+  )
 
 
 ggplot(coherence_mat, aes(x = k, y = coherence)) +
@@ -1199,33 +1410,41 @@ ggplot(coherence_mat, aes(x = k, y = coherence)) +
   geom_line(group = 1) +
   ggtitle("Best topics by coherence score") +
   theme_bw() +
-  scale_x_continuous(breaks = seq(1, 20, by = 1)) + 
-  scale_y_continuous(limits = c(-0.008, 0), breaks = seq(-0.008, 0, by = 0.001)) + 
+  scale_x_continuous(breaks = seq(1, 20, by = 1)) +
+  scale_y_continuous(limits = c(-0.008, 0),
+                     breaks = seq(-0.008, 0, by = 0.001)) +
   ylab("Coherence")
-  
+
 # Top 20 terms, describing what this topic is about.
-model <- model_list[which.max(coherence_mat$coherence)][[ 1 ]]
+model <- model_list[which.max(coherence_mat$coherence)][[1]]
 
 model$top_terms <- GetTopTerms(phi = model$phi, M = 20)
 
 top20_wide <- as.data.frame(model$top_terms)
 
-allterms <-data.frame(t(model$phi))
+allterms <- data.frame(t(model$phi))
 
 allterms$word <- rownames(allterms)
 
 rownames(allterms) <- 1:nrow(allterms)
 
-allterms <- melt(allterms,idvars = "word") 
+allterms <- melt(allterms, idvars = "word")
 
 allterms <- allterms %>% rename(topic = variable)
 
-FINAL_allterms <- allterms %>% group_by(topic) %>% arrange(desc(value))
+FINAL_allterms <-
+  allterms %>% group_by(topic) %>% arrange(desc(value))
 
 # r^2 for LDA ####
 
 library(textmineR)
-r2 <- CalcTopicModelR2(dtm = dtm, phi = model_list[[19]]$phi, theta = model_list[[19]]$theta, cpus = 4)
+r2 <-
+  CalcTopicModelR2(
+    dtm = dtm,
+    phi = model_list[[19]]$phi,
+    theta = model_list[[19]]$theta,
+    cpus = 4
+  )
 
 # 0.0007624563
 
@@ -1237,46 +1456,50 @@ summary(doc_lengths)
 # what words are most associated with more than mean injured?
 
 # remove any tokens that were in 3 or fewer documents
-dtm2 <- dtm[ , colSums(dtm > 0) > 3 ]
+dtm2 <- dtm[, colSums(dtm > 0) > 3]
 
-tf2 <- tf[ tf$term %in% colnames(dtm2) , ]
+tf2 <- tf[tf$term %in% colnames(dtm2) ,]
 
 # look at the most frequent bigrams
-tf_bigrams <- tf2[ stringr::str_detect(tf2$term, "_") , ]
+tf_bigrams <- tf2[stringr::str_detect(tf2$term, "_") ,]
 
-tf_bigrams <- tf_bigrams[ tf_bigrams$term %in% colnames(dtm2) , ]
+tf_bigrams <- tf_bigrams[tf_bigrams$term %in% colnames(dtm2) ,]
 
-tf_meanantallskadet <- list(less = TermDocFreq(dtm[full_data$antall_skadet < 1.01 , ]),
-                            more = TermDocFreq(dtm[full_data$antall_skadet > 1.01 , ]))
+tf_meanantallskadet <-
+  list(less = TermDocFreq(dtm[full_data$antall_skadet < 1.01 ,]),
+       more = TermDocFreq(dtm[full_data$antall_skadet > 1.01 ,]))
 
-head(tf_meanantallskadet$less[ order(tf_meanantallskadet$less$term_freq, decreasing = TRUE) , ], 10)
+head(tf_meanantallskadet$less[order(tf_meanantallskadet$less$term_freq, decreasing = TRUE) ,], 10)
 
-head(tf_meanantallskadet$more[ order(tf_meanantallskadet$more$term_freq, decreasing = TRUE) , ], 10)
+head(tf_meanantallskadet$more[order(tf_meanantallskadet$more$term_freq, decreasing = TRUE) ,], 10)
 
 
 # let's reweight by probability by class
-p_words <- colSums(dtm) / sum(dtm) 
+p_words <- colSums(dtm) / sum(dtm)
 
-tf_meanantallskadet$less$conditional_prob <- 
+tf_meanantallskadet$less$conditional_prob <-
   tf_meanantallskadet$less$term_freq / sum(tf_meanantallskadet$less$term_freq)
 
-tf_meanantallskadet$less$prob_lift <- tf_meanantallskadet$less$conditional_prob - p_words
+tf_meanantallskadet$less$prob_lift <-
+  tf_meanantallskadet$less$conditional_prob - p_words
 
-tf_meanantallskadet$more$conditional_prob <- 
+tf_meanantallskadet$more$conditional_prob <-
   tf_meanantallskadet$more$term_freq / sum(tf_meanantallskadet$more$term_freq)
 
-tf_meanantallskadet$more$prob_lift <- tf_meanantallskadet$more$conditional_prob - p_words
+tf_meanantallskadet$more$prob_lift <-
+  tf_meanantallskadet$more$conditional_prob - p_words
 
 # let's look again with new weights
-head(tf_meanantallskadet$less[ order(tf_meanantallskadet$less$prob_lift, decreasing = TRUE) , ], 10)
+head(tf_meanantallskadet$less[order(tf_meanantallskadet$less$prob_lift, decreasing = TRUE) ,], 10)
 
-head(tf_meanantallskadet$more[ order(tf_meanantallskadet$more$prob_lift, decreasing = TRUE) , ], 10)
+head(tf_meanantallskadet$more[order(tf_meanantallskadet$more$prob_lift, decreasing = TRUE) ,], 10)
 
 # what about bi-grams?
-tf_meanantallskadet_bigram <- lapply(tf_meanantallskadet, function(x){
-  x <- x[ stringr::str_detect(x$term, "_") , ]
-  x[ order(x$prob_lift, decreasing = TRUE) , ]
-})
+tf_meanantallskadet_bigram <-
+  lapply(tf_meanantallskadet, function(x) {
+    x <- x[stringr::str_detect(x$term, "_") ,]
+    x[order(x$prob_lift, decreasing = TRUE) ,]
+  })
 
 head(tf_meanantallskadet_bigram$less, 10)
 
@@ -1289,8 +1512,8 @@ head(tf_meanantallskadet_bigram$more, 10)
 
 full_data_Corpus <-
   Corpus(VectorSource(removePunctuation(full_data$ALL)))
-full_data_DTM <- DocumentTermMatrix(full_data_Corpus, 
-                                    control = list(weighting = "weightTfIdf", 
+full_data_DTM <- DocumentTermMatrix(full_data_Corpus,
+                                    control = list(weighting = "weightTfIdf",
                                                    removeNumbers = TRUE))
 
 
@@ -1306,15 +1529,18 @@ model$top_terms
 
 # Get the prevalence of each topic
 # You can make this discrete by applying a threshold, say 0.05, for
-# topics in/out of docuemnts. 
+# topics in/out of docuemnts.
 model$prevalence <- colSums(model$theta) / sum(model$theta) * 100
 
 # prevalence should be proportional to alpha
-plot(model$prevalence, model$alpha, xlab = "prevalence", ylab = "alpha")
+plot(model$prevalence,
+     model$alpha,
+     xlab = "prevalence",
+     ylab = "alpha")
 
 
 # textmineR has a naive topic labeling tool based on probable bigrams
-model$labels <- LabelTopics(assignments = model$theta > 0.05, 
+model$labels <- LabelTopics(assignments = model$theta > 0.05,
                             dtm = dtm,
                             M = 1)
 
@@ -1322,25 +1548,30 @@ head(model$labels)
 
 
 # put them together, with coherence into a summary table
-model$summary <- data.frame(topic = rownames(model$phi),
-                            label = model$labels,
-                            coherence = round(model$coherence, 3),
-                            prevalence = round(model$prevalence,3),
-                            top_terms = apply(model$top_terms, 2, function(x){
-                              paste(x, collapse = ", ")
-                            }),
-                            stringsAsFactors = FALSE)
+model$summary <- data.frame(
+  topic = rownames(model$phi),
+  label = model$labels,
+  coherence = round(model$coherence, 3),
+  prevalence = round(model$prevalence, 3),
+  top_terms = apply(model$top_terms, 2, function(x) {
+    paste(x, collapse = ", ")
+  }),
+  stringsAsFactors = FALSE
+)
 
 
-model$summary[ order(model$summary$prevalence, decreasing = TRUE) , ][ 1:10 , ]
+model$summary[order(model$summary$prevalence, decreasing = TRUE) ,][1:10 ,]
 
 
 # predictions with gibbs
-assignments <- predict(model, dtm,
-                       method = "gibbs", 
-                       iterations = 200,
-                       burnin = 180,
-                       cpus = 2)
+assignments <- predict(
+  model,
+  dtm,
+  method = "gibbs",
+  iterations = 200,
+  burnin = 180,
+  cpus = 2
+)
 
 # predictions with dot
 assignments_dot <- predict(model, dtm2,
@@ -1348,82 +1579,118 @@ assignments_dot <- predict(model, dtm2,
 
 
 # compare
-barplot(rbind(assignments[10,], assignments_dot[10,]),
-        col = c("red", "blue"), las = 2, beside = TRUE)
-legend("topright", legend = c("gibbs", "dot"), col = c("red", "blue"), 
-       fill = c("red", "blue"))
+barplot(
+  rbind(assignments[10, ], assignments_dot[10, ]),
+  col = c("red", "blue"),
+  las = 2,
+  beside = TRUE
+)
+legend(
+  "topright",
+  legend = c("gibbs", "dot"),
+  col = c("red", "blue"),
+  fill = c("red", "blue")
+)
 
 
 # Exporting top 20 terms
 
 write.csv(top20_wide, "top20_wide.csv")
-  
+
 # Dendrogram for calculating similarities
-  model$topic_linguistic_dist <- CalcHellingerDist(model$phi)
-  
-  model$hclust <- hclust(as.dist(model$topic_linguistic_dist), "ward.D2")
-  
-  model$hclust$labels <- paste(model$hclust$labels, model$labels[ , 1])
-  
-  plot(model$hclust, xlab = "Topic relationships", sub = "")
-  
-  #visualising topics of words based on the max value of phi
-  
-  set.seed(1234)
-  
-  final_summary_words <- data.frame(top_terms = t(model$top_terms))
-  
-  final_summary_words$topic <- rownames(final_summary_words)
-  
-  rownames(final_summary_words) <- 1:nrow(final_summary_words)
-  
-  final_summary_words <- final_summary_words %>% melt(id.vars = c("topic"))
-  
-  final_summary_words <- final_summary_words %>% rename(word = value) %>% select(-variable)
-  
-  final_summary_words <- left_join(final_summary_words, allterms)
-  
-  final_summary_words <- final_summary_words %>% group_by(topic,word) %>%
-    arrange(desc(value))
-  
-  final_summary_words <- final_summary_words %>% group_by(topic, word) %>% filter(row_number() == 1) %>% 
-    ungroup() %>% tidyr::separate(topic, into =c("t","topic")) %>% select(-t)
-  
-  word_topic_freq <- left_join(final_summary_words, original_tf, by = c("word" = "term"))
-  
-  library(wordcloud)
-  pdf("cluster.pdf")
-  
-  for(i in 1:length(unique(final_summary_words$topic)))
-  {  wordcloud(words = subset(final_summary_words ,topic == i)$word, freq = subset(final_summary_words ,topic == i)$value, min.freq = 1,
-               max.words=200, random.order=FALSE, rot.per=0.35, 
-               colors=brewer.pal(8, "Dark2"))}
-  dev.off()
+model$topic_linguistic_dist <- CalcHellingerDist(model$phi)
+
+model$hclust <-
+  hclust(as.dist(model$topic_linguistic_dist), "ward.D2")
+
+model$hclust$labels <-
+  paste(model$hclust$labels, model$labels[, 1])
+
+plot(model$hclust, xlab = "Topic relationships", sub = "")
+
+#visualising topics of words based on the max value of phi
+
+set.seed(1234)
+
+final_summary_words <- data.frame(top_terms = t(model$top_terms))
+
+final_summary_words$topic <- rownames(final_summary_words)
+
+rownames(final_summary_words) <- 1:nrow(final_summary_words)
+
+final_summary_words <-
+  final_summary_words %>% melt(id.vars = c("topic"))
+
+final_summary_words <-
+  final_summary_words %>% rename(word = value) %>% select(-variable)
+
+final_summary_words <- left_join(final_summary_words, allterms)
+
+final_summary_words <-
+  final_summary_words %>% group_by(topic, word) %>%
+  arrange(desc(value))
+
+final_summary_words <-
+  final_summary_words %>% group_by(topic, word) %>% filter(row_number() == 1) %>%
+  ungroup() %>% tidyr::separate(topic, into = c("t", "topic")) %>% select(-t)
+
+word_topic_freq <-
+  left_join(final_summary_words, original_tf, by = c("word" = "term"))
+
+library(wordcloud)
+pdf("cluster.pdf")
+
+for (i in 1:length(unique(final_summary_words$topic)))
+{
+  wordcloud(
+    words = subset(final_summary_words , topic == i)$word,
+    freq = subset(final_summary_words , topic == i)$value,
+    min.freq = 1,
+    max.words = 200,
+    random.order = FALSE,
+    rot.per = 0.35,
+    colors = brewer.pal(8, "Dark2")
+  )
+}
+dev.off()
 
 # Single wordcloud
 
- wordcloud::wordcloud(words = subset(final_summary_words ,topic == 15)$word, freq = subset(final_summary_words ,topic == i)$value, min.freq = 1,
-            max.words=200, random.order=FALSE, rot.per=0.25, 
-            colors=brewer.pal(8, "Dark2"))  
- 
- 
+wordcloud::wordcloud(
+  words = subset(final_summary_words , topic == 15)$word,
+  freq = subset(final_summary_words , topic == i)$value,
+  min.freq = 1,
+  max.words = 200,
+  random.order = FALSE,
+  rot.per = 0.25,
+  colors = brewer.pal(8, "Dark2")
+)
 
- 
+
+
+
 # other stuff
-  cleaned_full_data <- full_data %>%
-    unnest_tokens(word, ALL) %>%
-    anti_join(get_stopwords("no")) %>%
-    anti_join(get_stopwords("en")) %>%
-    filter(!word %in% custom_words)
-  
-  cleaned_full_data$word <- stemDocument(cleaned_full_data$word, language = "norwegian")
-  
-  top_terms_by_topic_LDA(input_text = cleaned_full_data$word, plot = T, number_of_topic = 20)
-  
-  top_terms_by_topic_tfidf(text_df = full_data)
-  
-  tfidf_bygroup_ALL <- top_terms_by_topic_tfidf(text_df = full_data, 
-                                                text_column = ALL, 
-                                                group = ulykketype, 
-                                                plot = T)
-  
+cleaned_full_data <- full_data %>%
+  unnest_tokens(word, ALL) %>%
+  anti_join(get_stopwords("no")) %>%
+  anti_join(get_stopwords("en")) %>%
+  filter(!word %in% custom_words)
+
+cleaned_full_data$word <-
+  stemDocument(cleaned_full_data$word, language = "norwegian")
+
+top_terms_by_topic_LDA(
+  input_text = cleaned_full_data$word,
+  plot = T,
+  number_of_topic = 20
+)
+
+top_terms_by_topic_tfidf(text_df = full_data)
+
+tfidf_bygroup_ALL <-
+  top_terms_by_topic_tfidf(
+    text_df = full_data,
+    text_column = ALL,
+    group = ulykketype,
+    plot = T
+  )
