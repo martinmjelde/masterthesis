@@ -66,6 +66,14 @@ if (!require("textrecipes"))
   install.packages("textrecipes")
 library(textrecipes) # Defining the recipe for the machine learning algorithm
 
+if (!require("party"))
+  install.packages("party")
+library(textrecipes) # Create decision trees
+
+if (!require("themis"))
+  install.packages("themis")
+library(themis) # For classifying when the classes are unbalanced
+
 ##### Functions #####
 # function to get & plot the most informative terms by a readr::specificed number
 # of topics, using LDA
@@ -604,12 +612,12 @@ ggplot(full_data,
     legend.position = "bottom"
   ) +
   scale_y_continuous(breaks = seq(0, 4000, by = 500)) +
-  geom_hline(yintercept = a) +
+  geom_hline(yintercept = 3152) +
   geom_label(
     aes(
       x = 0,
-      y = a,
-      label = paste("Mean =", round(a))
+      y = 3152,
+      label = "Mean = 3 152.5"
     ),
     nudge_x = 6.5,
     nudge_y = 110,
@@ -618,19 +626,14 @@ ggplot(full_data,
   labs(
     x = "Month",
     y = "Number of entries per month",
-    title = paste(
-      "Reported accidents (1981-2022) in Sdir's dataset. N = ",
-      nrow(full_data[!is.na(full_data$ulykkedato),])
-    )
-  ) +
-  scale_fill_manual(values = c(safe_colorblind_palette))
+    title = "Reported accidents (1981-2022) in Sdir's dataset. N = 37 830")
 
 # I just added it manually. Might create a prettier solution later.
 rm(a)
 
 # How many injured and dead
 
-ulykke %>%
+full_data %>%
   count(antall_skadet) %>%
   ggplot(aes(antall_skadet, n)) +
   geom_col() +
@@ -664,7 +667,7 @@ ulykke %>%
 
 # Only deceased
 
-ulykke %>%
+full_data %>%
   count(antall_omkommet) %>%
   ggplot(aes(antall_omkommet, n, label = antall_omkommet)) +
   geom_col() +
@@ -690,7 +693,7 @@ ulykke %>%
   geom_text(aes(label = n), nudge_y = 600) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
-ulykke %>%
+full_data %>%
   mutate(antall_antatt_døde = as.numeric(antall_savnet) + as.numeric(antall_omkommet)) %>%
   count(antall_antatt_døde) %>%
   ggplot(aes(antall_antatt_døde, n)) +
@@ -719,32 +722,29 @@ ulykke %>%
 
 # Also done with "ulykke"
 
-rm(ulykke)
-
 # A bit of cleaning, removing punctuation etc.
 
 # This creates too big of a file, so I'll have to postpone doing the full data
 # set, splitting it up
 
-
-
-full_data1 <- full_data %>%
-  filter(!is.na(ALL)) %>%
-  select(ALL, antall_skadet, antall_omkommet) %>%
-  mutate(ALL_cleaned = str_replace_all(
-    string = ALL,
-    pattern =  "\n",
-    replacement = ""
-  )) %>%
-  mutate(ALL_cleaned2 = str_squish(
-    removePunctuation(
-      ALL_cleaned,
-      preserve_intra_word_contractions = T,
-      preserve_intra_word_dashes = T
-    )
-  )) %>%
-  select(ALL_cleaned2, antall_skadet, antall_omkommet) %>%
-  rename(c("ALL" = "ALL_cleaned2"))
+# Should be fine, but keeping around for posterity
+# full_data1 <- full_data1 %>%
+#   filter(!is.na(ALL)) %>%
+#   select(ALL, antall_skadet, antall_omkommet) %>%
+#   mutate(ALL = str_replace_all(
+#     string = ALL,
+#     pattern =  "\n",
+#     replacement = ""
+#   )) %>%
+#   transmute(ALL = str_squish(
+#     removePunctuation(
+#       ALL,
+#       preserve_intra_word_contractions = T,
+#       preserve_intra_word_dashes = T
+#     )
+#   )) %>%
+#   select(ALL_cleaned2, antall_skadet, antall_omkommet) %>%
+#   rename(c("ALL" = "ALL_cleaned2"))
 
 
 
@@ -796,25 +796,331 @@ full_data %>%
 # Stemming
 
 
-#### Building a regression model ####
-# From chapter 6 https://smltar.com/mlregression.html#firstmlregression
+#### Classification model ####
 
-# I think the data set is too extensive as it is right now, extracting a smaller
-# sample first
+zeroNAs <- names(which(colSums(is.na(full_data))<=0))
+lessthanhundred <- names(which(colSums(is.na(full_data))<100))
+lessthanthousand <- names(which(colSums(is.na(full_data))<1000))
 
-# small_data <- full_data[!is.na(full_data$antall_skadet),]
+colnames(full_data)[!apply(full_data, 2, anyNA)]
+
+# These are the variables with 0 NA values and we should try to use them.
 
 full_data <- full_data %>%
   mutate(ALL = str_replace_all(
     string = ALL,
-    pattern =  "NA",
+    pattern =  "Konvertert fra PUS:",
     replacement = ""
   )) %>%
   mutate(ALL = str_squish(ALL))
 
 # The algorithm can't handle missing values, so we're editing them to 0
 
-full_data$antall_skadet[is.na(full_data$antall_skadet)] <- 0
+# full_data$antall_skadet[is.na(full_data$antall_skadet)] <- 0
+
+library(tidymodels)
+set.seed(1234)
+full_data_split <-   full_data %>%
+  mutate(ALL = removeNumbers(ALL)) %>%
+  initial_split()
+
+full_data_train <- training(full_data_split)
+full_data_test <- testing(full_data_split)
+
+library(textrecipes)
+
+
+# For multiple classes for classification, which are rather unbalanced:
+library(themis)
+
+unbalanced_full_data_rec <- recipe(ulykketype ~ ALL, data = full_data_train) %>%
+  step_tokenize(ALL) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(language = "en") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
+  step_tokenfilter(ALL, max_tokens = 1e4) %>%
+  step_tfidf(ALL) %>%
+  step_downsample(ulykketype)
+
+unbalanced_vfolds <- vfold_cv(full_data_train)
+
+multi_spec <- multinom_reg(penalty = tune(), mixture = 1) %>%
+  set_mode("classification") %>%
+  set_engine("glmnet")
+
+
+multi_spec
+
+library(hardhat)
+# Is packed with the other packages
+
+sparse_bp <- default_recipe_blueprint(composition = "dgCMatrix")
+
+
+# Single lasso
+
+lasso_spec <- logistic_reg(penalty = 0.01, mixture = 1) %>%
+  set_mode("classification") %>%
+  set_engine("glmnet")
+
+lasso_spec
+
+lasso_wf <- workflow() %>%
+  add_recipe(unbalanced_full_data_rec) %>%
+  add_model(lasso_spec)
+
+lasso_wf
+
+# Lasso
+
+multi_lasso_wf <- workflow() %>%
+  add_recipe(unbalanced_full_data_rec, blueprint = sparse_bp) %>%
+  add_model(multi_spec)
+
+multi_lasso_wf
+
+lambda_grid <- grid_regular(penalty(), levels = 30)
+lambda_grid
+
+smaller_lambda <- grid_regular(penalty(range = c(-5, 0)), levels = 20)
+smaller_lambda
+
+multi_lasso_rs <- tune_grid(
+  multi_lasso_wf,
+  unbalanced_vfolds,
+  grid = lambda_grid,
+  control = control_resamples(save_pred = TRUE)
+)
+
+multi_lasso_rs
+
+# What's the best accuracy?
+
+best_acc <- multi_lasso_rs %>%
+  show_best("accuracy")
+
+best_acc
+
+# Making a confusion matrix
+
+multi_lasso_rs %>%
+  collect_predictions() %>%
+  filter(penalty == best_acc$penalty) %>%
+  #filter(id == "Fold01") %>%
+  conf_mat(ulykketype, .pred_class) %>%
+  autoplot(type = "heatmap") +
+  scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1.1,
+      color = "black"
+    ))
+
+# Removing all the correctly predicted observations:
+
+multi_lasso_rs %>%
+  collect_predictions() %>%
+  filter(penalty == best_acc$penalty) %>%
+ # filter(id == "Fold01") %>%
+  filter(.pred_class != ulykketype) %>%
+  conf_mat(ulykketype, .pred_class) %>%
+  autoplot(type = "heatmap") +
+  scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, 25)) + 
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1.1,
+      color = "black"
+    ))
+
+# Using a smaller lambda
+
+multi_lasso_rs_small <- tune_grid(
+  multi_lasso_wf,
+  unbalanced_vfolds,
+  grid = smaller_lambda,
+  control = control_resamples(save_pred = TRUE)
+)
+
+multi_lasso_rs_small
+
+# Only three cases
+
+# Adding the different classes to the data
+
+# Creating a new variable
+full_data$MTO <- NA
+
+# Man
+
+full_data$MTO[full_data$ulykketype == "Arbeidsulykke/Personulykke"] <- "Man"
+full_data$MTO[full_data$ulykketype == "Annen ulykke"] <- "Man"
+
+# Technology
+
+full_data$MTO[full_data$ulykketype == "Maskinhavari"] <- "Technology"
+full_data$MTO[full_data$ulykketype == "Brann/Eksplosjon"] <- "Technology"
+full_data$MTO[full_data$ulykketype == "Kantring"] <- "Technology"
+full_data$MTO[full_data$ulykketype == "Kollisjon"] <- "Technology"
+full_data$MTO[full_data$ulykketype == "Lekkasje"] <- "Technology"
+full_data$MTO[full_data$ulykketype == "Stabilitetssvikt uten kantring"] <- "Technology"
+
+# Organisation
+
+full_data$MTO[full_data$ulykketype == "Feil på redningsmidler"] <- "Organisation"
+full_data$MTO[full_data$ulykketype == "Hardtværskade"] <- "Organisation"
+full_data$MTO[full_data$ulykketype == "Kontaktskade, Kaier, Broer etc"] <- "Organisation"
+full_data$MTO[full_data$ulykketype == "Miljøskade/Forurensing"] <- "Organisation"
+full_data$MTO[full_data$ulykketype == "Grunnstøting"] <- "Organisation"
+full_data$MTO[full_data$ulykketype == "Fartøyet er savnet, forsvunnet"] <- "Organisation"
+
+
+full_data$MTO <- as.factor(as.character(full_data$MTO))
+
+library(tidymodels)
+set.seed(1234)
+MTO_full_data_split <-   full_data %>%
+  mutate(ALL = removeNumbers(ALL)) %>%
+  initial_split(strata = MTO)
+
+MTO_full_data_train <- training(MTO_full_data_split)
+MTO_full_data_test <- testing(MTO_full_data_split)
+
+library(textrecipes)
+
+# Naive Bayes
+# We increased the max tokens to 10 000, due to the Naive Bayes' ability to work
+# with more data than the other algorithms. 
+MTO_full_data_rec <-
+  recipe(MTO ~ ALL, data = MTO_full_data_train) %>%
+  step_tokenize(ALL) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(language = "en") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
+  step_tokenfilter(ALL, max_tokens = 1e4) %>%
+  step_tfidf(ALL)
+
+MTO_full_data_rec
+
+MTO_full_data_prep <- prep(MTO_full_data_rec)
+MTO_full_data_bake <- bake(MTO_full_data_prep, new_data = NULL)
+
+dim(MTO_full_data_bake)
+
+# Creating a workflow
+
+MTO_full_data_wf <- workflow() %>%
+  add_recipe(MTO_full_data_rec)
+
+MTO_full_data_wf
+
+nb_spec <- naive_Bayes() %>%
+  set_mode("classification") %>%
+  set_engine("naivebayes")
+
+
+nb_fit <- MTO_full_data_wf %>%
+  add_model(nb_spec) %>%
+  fit(data = MTO_full_data_train)
+
+# Extracting results
+
+svm_fit %>%
+  extract_fit_parsnip() %>%
+  tidy() %>%
+  arrange(-estimate)
+
+# The term Bias here means the same thing as an intercept. We see here what
+# terms contribute to a rescue mission having more injured
+
+svm_fit %>%
+  extract_fit_parsnip() %>%
+  tidy() %>%
+  arrange(estimate)
+
+# Creating folds to validate
+
+set.seed(123)
+full_data_folds <- vfold_cv(full_data_train)
+
+full_data_folds
+
+# Resampling - rs = resample here
+
+set.seed(123)
+svm_rs <- fit_resamples(full_data_wf %>% add_model(svm_spec),
+                        full_data_folds,
+                        control = control_resamples(save_pred = TRUE))
+
+svm_rs
+
+collect_metrics(svm_rs)
+
+null_regression <- null_model() %>%
+  set_engine("parsnip") %>%
+  set_mode("classification")
+
+null_rs <- fit_resamples(full_data_wf %>% add_model(null_regression),
+                         full_data_folds,
+                         metrics = metric_set(rmse))
+
+null_rs
+
+# Remember that this is using unigrams, but it is in fact a little better than
+# the null model
+
+collect_metrics(null_rs)
+collect_metrics(svm_rs)
+
+# Compare to random forest
+
+# Changing from 1000 to 100 trees due to the time it took the calculations
+library(ranger)
+
+rf_spec <- rand_forest(trees = 1000) %>%
+  set_engine("ranger") %>%
+  set_mode("classification")
+
+rf_spec
+
+rf_rs <- fit_resamples(full_data_wf %>% add_model(rf_spec),
+                       full_data_folds,
+                       control = control_resamples(save_pred = TRUE))
+
+collect_metrics(rf_rs)
+
+library(performanceEstimation)
+classificationMetrics()
+
+
+#### Regression model ####
+# From chapter 6 https://smltar.com/mlregression.html#firstmlregression
+
+# I think the data set is too extensive as it is right now, extracting a smaller
+# sample first
+
+
+
+# small_data <- full_data[!is.na(full_data$antall_skadet),]
+
+full_data <- full_data %>%
+  mutate(ALL = str_replace_all(
+    string = ALL,
+    pattern =  "Konvertert fra PUS:",
+    replacement = ""
+  )) %>%
+  mutate(ALL = str_squish(ALL))
+
+# The algorithm can't handle missing values, so we're editing them to 0
+
+# full_data$antall_skadet[is.na(full_data$antall_skadet)] <- 0
 
 library(tidymodels)
 set.seed(1234)
@@ -831,7 +1137,7 @@ library(textrecipes)
 # We can add more predictors here, such as
 
 full_data_rec <-
-  recipe(antall_skadet ~ ALL, data = full_data_train) %>%
+  recipe(ulykketype ~ ALL, data = full_data_train) %>%
   step_tokenize(ALL) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
@@ -1317,7 +1623,7 @@ ggplot(sentiments, aes(x = as.numeric(ulykkesår), y = sentiment)) +
 
 small_data <- full_data[!is.na(full_data$ALL), ]
 
-small_data <- small_data %>%
+full_data_cleaned <- full_data %>%
   unnest_tokens(word, ALL) %>%
   anti_join(get_stopwords("no")) %>%
   anti_join(get_stopwords("en")) %>%
@@ -1343,7 +1649,7 @@ small_data <- small_data %>%
 
 #create DTM
 library(textmineR)
-dtm <- CreateDtm(small_data$word,
+dtm <- CreateDtm(full_data_cleaned$word,
                  ngram_window = c(1, 3))
 #, stem_lemma_function = function(x) SnowballC::wordStem(x, language = "norwegian"
 
@@ -1357,7 +1663,7 @@ original_tf <-
 vocabulary <-
   tf$term[tf$term_freq > 1 & tf$doc_freq < nrow(dtm) / 2]
 
-k_list <- seq(1, 20, by = 1)
+k_list <- seq(1, 50, by = 1)
 setwd("~/Master/masterthesis")
 
 model_dir <-
@@ -1368,7 +1674,7 @@ if (!dir.exists(model_dir))
 library(parallel)
 model_list <-
   TmParallelApply(
-    cpus = 4,
+    cpus = 8,
     X = k_list,
     FUN = function(k) {
       filename = file.path(model_dir, paste0(k, "_topics.rda"))
@@ -1410,9 +1716,9 @@ ggplot(coherence_mat, aes(x = k, y = coherence)) +
   geom_line(group = 1) +
   ggtitle("Best topics by coherence score") +
   theme_bw() +
-  scale_x_continuous(breaks = seq(1, 20, by = 1)) +
-  scale_y_continuous(limits = c(-0.008, 0),
-                     breaks = seq(-0.008, 0, by = 0.001)) +
+  #scale_x_continuous(breaks = seq(1, 20, by = 1)) +
+  #scale_y_continuous(limits = c(-0.008, 0),
+                     #breaks = seq(-0.008, 0, by = 0.001)) +
   ylab("Coherence")
 
 # Top 20 terms, describing what this topic is about.
@@ -1441,9 +1747,9 @@ library(textmineR)
 r2 <-
   CalcTopicModelR2(
     dtm = dtm,
-    phi = model_list[[19]]$phi,
-    theta = model_list[[19]]$theta,
-    cpus = 4
+    phi = model_list[[42]]$phi,
+    theta = model_list[[42]]$theta,
+    cpus = 8
   )
 
 # 0.0007624563
@@ -1506,7 +1812,8 @@ head(tf_meanantallskadet_bigram$less, 10)
 head(tf_meanantallskadet_bigram$more, 10)
 
 
-# Calculating cosine similarity and distance
+# Calculating cosine similarity and distance is not possible due to the size of
+# the DTM.
 
 # TF-IDF and cosine similarity
 
