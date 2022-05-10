@@ -74,6 +74,14 @@ if (!require("themis"))
   install.packages("themis")
 library(themis) # For classifying when the classes are unbalanced
 
+if (!require("discrim"))
+  install.packages("discrim")
+library(discrim) # Naive Bayes classifiers
+
+if (!require("naivebayes"))
+  install.packages("naivebayes")
+library(naivebayes) # Naive Bayes classifiers
+
 ##### Functions #####
 # function to get & plot the most informative terms by a readr::specificed number
 # of topics, using LDA
@@ -871,7 +879,7 @@ lasso_wf <- workflow() %>%
 
 lasso_wf
 
-# Lasso
+# Multiple lasso
 
 multi_lasso_wf <- workflow() %>%
   add_recipe(unbalanced_full_data_rec, blueprint = sparse_bp) %>%
@@ -893,6 +901,16 @@ multi_lasso_rs <- tune_grid(
 )
 
 multi_lasso_rs
+
+autoplot(multi_lasso_rs) +
+  labs(
+    title = "Lasso model performance across regularization penalties",
+    subtitle = "Performance metrics can be used to identity the best penalty"
+  )+
+  theme_bw()
+
+multi_lasso_rs %>%
+  show_best("roc_auc")
 
 # What's the best accuracy?
 
@@ -951,6 +969,14 @@ multi_lasso_rs_small <- tune_grid(
 
 multi_lasso_rs_small
 
+# Using a sparse encoding:
+
+tune_spec <- logistic_reg(penalty = tune(), mixture = 1) %>%
+  set_mode("classification") %>%
+  set_engine("glmnet")
+
+tune_spec
+
 # Only three cases
 
 # Adding the different classes to the data
@@ -984,6 +1010,7 @@ full_data$MTO[full_data$ulykketype == "Fartøyet er savnet, forsvunnet"] <- "Org
 
 full_data$MTO <- as.factor(as.character(full_data$MTO))
 
+
 library(tidymodels)
 set.seed(1234)
 MTO_full_data_split <-   full_data %>%
@@ -998,21 +1025,17 @@ library(textrecipes)
 # Naive Bayes
 # We increased the max tokens to 10 000, due to the Naive Bayes' ability to work
 # with more data than the other algorithms. 
+
 MTO_full_data_rec <-
   recipe(MTO ~ ALL, data = MTO_full_data_train) %>%
   step_tokenize(ALL) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tokenfilter(ALL, max_tokens = 1e4) %>%
+  step_tokenfilter(ALL, max_tokens = 1e3) %>%
   step_tfidf(ALL)
 
 MTO_full_data_rec
-
-MTO_full_data_prep <- prep(MTO_full_data_rec)
-MTO_full_data_bake <- bake(MTO_full_data_prep, new_data = NULL)
-
-dim(MTO_full_data_bake)
 
 # Creating a workflow
 
@@ -1021,14 +1044,449 @@ MTO_full_data_wf <- workflow() %>%
 
 MTO_full_data_wf
 
+library(discrim)
+
 nb_spec <- naive_Bayes() %>%
   set_mode("classification") %>%
   set_engine("naivebayes")
 
+nb_spec
+
+library(naivebayes)
 
 nb_fit <- MTO_full_data_wf %>%
   add_model(nb_spec) %>%
-  fit(data = MTO_full_data_train)
+  parsnip::fit(data = MTO_full_data_train)
+
+set.seed(234)
+MTO_full_data_folds <- vfold_cv(MTO_full_data_train)
+
+MTO_full_data_folds
+
+MTO_nb_wf <- workflow() %>%
+  add_recipe(MTO_full_data_rec) %>%
+  add_model(nb_spec)
+
+MTO_nb_wf
+
+# Adding resamples
+
+nb_rs <- fit_resamples(
+  MTO_nb_wf,
+  MTO_full_data_folds,
+  control = control_resamples(save_pred = TRUE)
+)
+
+MTO_nb_rs_metrics <- collect_metrics(nb_rs)
+MTO_nb_rs_predictions <- collect_predictions(nb_rs)
+
+MTO_nb_rs_metrics
+
+MTO_nb_rs_predictions %>%
+  filter(id == "Fold01") %>% 
+  # group_by(id) %>% cannot group by id because it's so bad
+  roc_curve(truth = MTO, .pred_Man) %>%
+  autoplot() +
+  labs(
+    color = NULL,
+    title = "ROC curve for the accident type based on the MTO framework",
+    subtitle = "Each resample fold is shown in a different color"
+  )
+
+conf_mat_resampled(nb_rs, tidy = FALSE) %>%
+  autoplot(type = "heatmap")
+
+# That was not useful, as most cases were appointed to the Man category.
+
+# Let's compare to the null model:
+
+null_classification <- null_model() %>%
+  set_engine("parsnip") %>%
+  set_mode("classification")
+
+null_rs <- workflow() %>%
+  add_recipe(MTO_full_data_rec) %>%
+  add_model(null_classification) %>%
+  fit_resamples(
+    MTO_full_data_folds
+  )
+
+null_rs %>%
+  collect_metrics()
+
+# Splitting it up into man made and structural origins
+
+full_data$MTO_man <- NA
+full_data$MTO_man[full_data$MTO == "Man"] <- "Man" 
+full_data$MTO_man[full_data$MTO != "Man"] <- "Structures"
+
+full_data$MTO_man <- as.factor(as.character(full_data$MTO_man))
+table(full_data$MTO_man)  
+
+# Splitting and creating a new train/test set
+
+MTO_man_full_data_split <-   full_data %>%
+  mutate(ALL = removeNumbers(ALL)) %>%
+  initial_split(strata = MTO_man)
+
+MTO_man_full_data_train <- training(MTO_man_full_data_split)
+MTO_man_full_data_test <- testing(MTO_man_full_data_split)
+
+MTO_man_full_data_rec <-
+  recipe(MTO_man ~ ALL, data = MTO_man_full_data_train) %>%
+  step_tokenize(ALL) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(language = "en") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
+  step_tokenfilter(ALL, max_tokens = 1e4) %>%
+  step_tfidf(ALL)
+
+MTO_man_full_data_rec
+
+# Creating a workflow
+
+MTO_man_full_data_wf <- workflow() %>%
+  add_recipe(MTO_man_full_data_rec)
+
+MTO_man_full_data_wf
+
+library(discrim)
+library(naivebayes)
+
+MTO_man_nb_fit <- MTO_man_full_data_wf %>%
+  add_model(nb_spec) %>%
+  parsnip::fit(data = MTO_man_full_data_train)
+
+set.seed(234)
+MTO_man_full_data_folds <- vfold_cv(MTO_man_full_data_train)
+
+MTO_man_full_data_folds
+
+MTO_man_nb_wf <- workflow() %>%
+  add_recipe(MTO_man_full_data_rec) %>%
+  add_model(nb_spec)
+
+MTO_man_nb_wf
+
+# Adding resamples
+
+MTO_man_nb_rs <- fit_resamples(
+  MTO_man_nb_wf,
+  MTO_man_full_data_folds,
+  control = control_resamples(save_pred = TRUE)
+)
+
+MTO_man_nb_rs_metrics <- collect_metrics(MTO_man_nb_rs)
+MTO_man_nb_rs_predictions <- collect_predictions(MTO_man_nb_rs)
+
+MTO_man_nb_rs_metrics
+
+MTO_man_nb_rs_predictions %>%
+  #filter(id == "Fold01") %>% 
+  group_by(id) %>% 
+  roc_curve(truth = MTO_man, .pred_Man) %>%
+  autoplot() +
+  labs(
+    color = NULL,
+    title = "ROC curve for the accident type based on the simplified MTO framework",
+    subtitle = "Each resample fold is shown in a different color"
+  )
+
+conf_mat_resampled(MTO_man_nb_rs, tidy = FALSE) %>%
+  autoplot(type = "heatmap")
+
+library(vip)
+
+MTO_man_imp <- pull_workflow_fit(final_fitted$.workflow[[1]]) %>%
+  vi(lambda = choose_acc$penalty)
+
+# Binary - MTO_man
+MTO_imp %>%
+  mutate(
+    Sign = case_when(Sign == "POS" ~ "Less about credit reporting",
+                     Sign == "NEG" ~ "More about credit reporting"),
+    Importance = abs(Importance),
+    Variable = str_remove_all(Variable, "tfidf_"),
+    Variable = str_remove_all(Variable, "textfeature_narrative_copy_")
+  ) %>%
+  group_by(Sign) %>%
+  top_n(20, Importance) %>%
+  ungroup %>%
+  ggplot(aes(x = Importance,
+             y = fct_reorder(Variable, Importance),
+             fill = Sign)) +
+  geom_col(show.legend = FALSE) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap(~Sign, scales = "free") +
+  labs(
+    y = NULL,
+    title = "Variable importance for predicting the topic of a CFPB complaint",
+    subtitle = paste0("These features are the most important in predicting\n",
+                      "whether a complaint is about credit or not")
+  )
+
+
+# Trying a lasso model which is more robust for data disparity
+
+# For multiple classes for classification, which are rather unbalanced:
+library(themis)
+
+MTO_unbalanced_full_data_rec <- recipe(MTO ~ ALL, data = MTO_full_data_train) %>%
+  step_tokenize(ALL) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(language = "en") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
+  step_tokenfilter(ALL, max_tokens = 1e4) %>%
+  step_tfidf(ALL) %>%
+  step_downsample(MTO)
+
+MTO_unbalanced_vfolds <- vfold_cv(MTO_full_data_train)
+
+multi_spec <- multinom_reg(penalty = tune(), mixture = 1) %>%
+  set_mode("classification") %>%
+  set_engine("glmnet")
+
+
+multi_spec
+
+library(hardhat)
+# Is packed with the other packages
+
+sparse_bp <- default_recipe_blueprint(composition = "dgCMatrix")
+
+
+# Single lasso
+
+lasso_spec <- logistic_reg(penalty = 0.01, mixture = 1) %>%
+  set_mode("classification") %>%
+  set_engine("glmnet")
+
+lasso_spec
+
+lasso_wf <- workflow() %>%
+  add_recipe(MTO_unbalanced_full_data_rec) %>%
+  add_model(lasso_spec)
+
+lasso_wf
+
+# Lasso
+
+multi_lasso_wf <- workflow() %>%
+  add_recipe(MTO_unbalanced_full_data_rec, blueprint = sparse_bp) %>%
+  add_model(multi_spec)
+
+multi_lasso_wf
+
+lambda_grid <- grid_regular(penalty(), levels = 30)
+lambda_grid
+
+smaller_lambda <- grid_regular(penalty(range = c(-5, 0)), levels = 20)
+smaller_lambda
+
+multi_lasso_rs <- tune_grid(
+  multi_lasso_wf,
+  MTO_unbalanced_vfolds,
+  grid = lambda_grid,
+  control = control_resamples(save_pred = TRUE)
+)
+
+multi_lasso_rs
+
+# What's the best accuracy?
+
+best_acc <- multi_lasso_rs %>%
+  show_best("accuracy")
+
+best_acc
+
+best_roc <- multi_lasso_rs %>%
+  show_best("roc_auc")
+
+best_roc  
+
+# Making a confusion matrix
+
+multi_lasso_rs %>%
+  collect_predictions() %>%
+  filter(penalty == best_acc$penalty) %>%
+  #filter(id == "Fold01") %>%
+  conf_mat(MTO, .pred_class) %>%
+  autoplot(type = "heatmap") +
+  scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, 25))
+  #theme_bw(legend = "none")
+  # theme(
+  #   axis.text.x = element_text(
+  #     angle = 60,
+  #     size = 10,
+  #     vjust = 1,
+  #     hjust = 1.1,
+  #     color = "black"
+  #   ))
+
+# Removing all the correctly predicted observations:
+
+multi_lasso_rs %>%
+  collect_predictions() %>%
+  filter(penalty == best_acc$penalty) %>%
+  # filter(id == "Fold01") %>%
+  filter(.pred_class != MTO) %>%
+  conf_mat(MTO, .pred_class) %>%
+  autoplot(type = "heatmap") +
+  scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, 25)) 
+  # theme(
+  #   axis.text.x = element_text(
+  #     angle = 60,
+  #     size = 10,
+  #     vjust = 1,
+  #     hjust = 1.1,
+  #     color = "black"
+  #   ))
+
+# Using a smaller lambda
+
+multi_lasso_rs_small <- tune_grid(
+  multi_lasso_wf,
+  MTO_unbalanced_vfolds,
+  grid = smaller_lambda,
+  control = control_resamples(save_pred = TRUE)
+)
+
+multi_lasso_rs_small
+
+# Only three cases
+
+sparse_wf <- workflow() %>%
+  add_recipe(MTO_full_data_rec, blueprint = sparse_bp) %>%
+  add_model(tune_spec)
+
+tune_wf <- workflow() %>%
+  add_recipe(MTO_full_data_rec) %>%
+  add_model(tune_spec)
+
+set.seed(2022)
+tune_rs <- tune_grid(
+  tune_wf,
+  MTO_full_data_folds,
+  grid = lambda_grid,
+  control = control_resamples(save_pred = TRUE)
+)
+
+tune_rs
+
+collect_metrics(tune_rs)
+
+autoplot(tune_rs) +
+  labs(
+    title = "Lasso model performance across regularization penalties",
+    subtitle = "Performance metrics can be used to identity the best penalty"
+  )+
+  theme_bw()
+
+tune_rs %>%
+  show_best("roc_auc")
+
+chosen_auc <- tune_rs %>%
+  select_by_one_std_err(metric = "roc_auc", -penalty)
+
+chosen_auc
+
+
+final_lasso <- finalize_workflow(tune_wf, chosen_auc)
+
+fitted_lasso <- parsnip::fit(final_lasso, MTO_man_full_data_train)
+
+fitted_lasso %>%
+  pull_workflow_fit() %>%
+  tidy() %>%
+  arrange(-estimate)
+
+# Factors that assume structures. Higher number = higher estimate
+
+fitted_lasso %>%
+  pull_workflow_fit() %>%
+  tidy() %>%
+  arrange(estimate)
+
+# Factors that assume man
+
+
+# Tuning the recipe a little further:
+# Removing words that appear fewer than 10 times, possible typos etc.
+
+MTO_unbalanced_rec_v2 <- recipe(MTO ~ ALL, data = MTO_full_data_train) %>%
+  step_tokenize(ALL) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(language = "en") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
+  step_tokenfilter(ALL, max_tokens = tune(), min_times = 10) %>%
+  step_tfidf(ALL) %>%
+  step_downsample(MTO)
+
+sparse_wf_v2 <- MTO_full_data_wf %>%
+  update_recipe(MTO_unbalanced_rec_v2, blueprint = sparse_bp) %>%
+  add_model(multi_spec)
+
+
+# Tuning it further:
+
+final_grid <- grid_regular(
+  penalty(range = c(-4, 0)),
+  max_tokens(range = c(1e3, 3e3)),
+  levels = c(penalty = 20, max_tokens = 3)
+)
+
+final_grid
+
+
+set.seed(2020)
+tune_rs <- tune_grid(
+  sparse_wf_v2,
+  MTO_full_data_folds,
+  grid = final_grid,
+  metrics = metric_set(accuracy, sensitivity, specificity)
+)
+
+
+autoplot(tune_rs) +
+  labs(
+    color = "Number of tokens",
+    title = "Model performance across regularization penalties and tokens",
+    subtitle = paste("We can choose a simpler model with higher regularization")
+  )
+
+
+choose_acc <- tune_rs %>%
+  select_by_pct_loss(metric = "accuracy", -penalty)
+
+choose_acc
+
+final_wf <- finalize_workflow(sparse_wf_v2, choose_acc)
+final_wf
+
+final_fitted <- last_fit(final_wf, MTO_full_data_split)
+
+collect_metrics(final_fitted)
+
+# Confusion matrix
+
+collect_predictions(final_fitted) %>%
+  conf_mat(truth = MTO, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+
+
+# AUCROC
+
+collect_predictions(final_fitted)  %>%
+  roc_curve(truth = MTO, .pred_Man) %>%
+  autoplot() +
+  labs(
+    color = NULL,
+    title = "ROC curve for US Consumer Finance Complaints",
+    subtitle = "With final tuned lasso regularized classifier on the test set"
+  )
+
 
 # Extracting results
 
@@ -1374,8 +1832,8 @@ tune_wf <- workflow() %>%
 
 tune_wf
 
-final_grid <- grid_regular(max_tokens(range = c(1e3, 6e3)),
-                           levels = 6)
+final_grid <- grid_regular(max_tokens(range = c(1e3, 1e4)),
+                           levels = 10)
 
 final_grid
 
@@ -1396,10 +1854,12 @@ final_rs %>%
   geom_line(size = 1.5, alpha = 0.5) +
   geom_point(size = 2, alpha = 0.9) +
   facet_wrap( ~ .metric, scales = "free_y", ncol = 1) +
+  theme_bw()+
+  scale_x_continuous(breaks = seq(0, 10000, by = 2000))+
   theme(legend.position = "none") +
   labs(x = "Number of tokens",
        title = "Linear SVM performance across number of tokens",
-       subtitle = "Performance improves as we include more tokens")
+       subtitle = "Performance decreases as more tokens are included")
 
 chosen_mae <- final_rs %>%
   select_by_pct_loss(metric = "mae", max_tokens, limit = 3)
@@ -1469,7 +1929,7 @@ final_fitted %>%
     ),
     subtitle = "For the testing set, predictions are most accurate between 0-5 injured"
   ) +
-  scale_x_continuous(breaks = seq(0, 22, by = 1)) +
+  #scale_x_continuous(breaks = seq(0, 22, by = 1)) +
   theme_bw()
 
 full_data_bind <- collect_predictions(final_fitted) %>%
@@ -1546,7 +2006,7 @@ top_terms_by_topic_LDA(cleaned_documents_stem$terms, number_of_topics = 4)
 #### tf_idf ####
 
 
-full_data$ulykketype[is.na(full_data$ulykketype)] <- "Ukjent"
+#full_data$ulykketype[is.na(full_data$ulykketype)] <- "Ukjent"
 
 
 
@@ -1554,7 +2014,7 @@ tfidf_bygroup_ALL <- top_terms_by_topic_tfidf(
   text_df = full_data,
   text_column = ALL,
   group = ulykketype,
-  plot = F
+  plot = T
 )
 
 # do our own plotting
@@ -1583,8 +2043,12 @@ full_data %>%
   filter(!word2 %in% stop_words$word) %>%
   filter(!word1 %in% norwegian_stop_words$word) %>%
   filter(!word2 %in% norwegian_stop_words$word) %>%
+  # Added custom_words to norwegian_stop_words earlier
+  #filter(!word1 %in% custom_words) %>%
+  #filter(!word2 %in% custom_words) %>%
   unite(word, word1, word2, sep = " ") %>%
   count(word, sort = TRUE) %>%
+  top_n(10) %>%
   slice(1:10) %>%
   ggplot() +
   geom_bar(aes(word, n),
