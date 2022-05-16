@@ -65,10 +65,10 @@ library(chron) # excellent package for managing time variables
 if (!require("textrecipes"))
   install.packages("textrecipes")
 library(textrecipes) # Defining the recipe for the machine learning algorithm
-
-if (!require("party"))
-  install.packages("party")
-library(textrecipes) # Create decision trees
+# 
+# if (!require("party"))
+#   install.packages("party")
+# library(textrecipes) # Create decision trees
 
 if (!require("themis"))
   install.packages("themis")
@@ -801,8 +801,446 @@ full_data %>%
   filter(!word %in% custom_words) %>%
   count(word, sort = TRUE)
 
-# Stemming
+#### Trying to detect languages ####
+##### Google's text recognition #####
+require(cld3)
+library(pbapply)
 
+full_data$ALL_cleaned <- removeNumbers(full_data$ALL)
+full_data$ALL_cleaned <- removePunctuation(full_data$ALL_cleaned)
+full_data$ALL_cleaned <- str_remove_all(string = full_data$ALL_cleaned, pattern = "Konvertert fra DAMA")
+full_data$ALL_cleaned <- str_squish(full_data$ALL_cleaned)
+
+full_data$length_ALL_cleaned <- str_count(full_data$ALL_cleaned, pattern = boundary("word"))
+
+table(full_data$length_ALL_cleaned)
+mean(full_data$length_ALL_cleaned)
+
+# Using the automated version:
+
+full_data$languages <- cld3::detect_language(full_data$ALL_cleaned)
+
+# Investigating and cleaning:
+
+head(full_data$ALL_cleaned[full_data$languages == "bs"])
+
+full_data$languages <- as.character(full_data$languages)
+
+table(full_data$languages[full_data$ALL_cleaned == "Overflateslagskade"])
+# All of the instances where "Overflateslagskade" is the only word is incorrectly
+# labeled as "bs", rather than "no".
+full_data$languages[full_data$ALL_cleaned == "Overflateslagskade"] <- "no"
+
+table(full_data$languages)
+
+table(head(full_data$ALL_cleaned[full_data$languages == "da"], 100))
+
+# Is it perhaps one of the people writing the reports?
+table(full_data$registrert_av.x[full_data$languages == "da"])
+
+# These reports are a mix of norwegian and english
+
+full_data$languages[
+  isTRUE(
+    grepl(
+      full_data$ALL_cleaned,
+      pattern = "Indre skader Overflateslagskade"))] <- "no"
+
+full_data$languages[
+  isTRUE(
+    grepl(
+      full_data$ALL_cleaned,
+      pattern = "Indre skader"))] <- "no"
+
+table(full_data$ALL_cleaned[full_data$languages == "de"])
+
+full_data$languages[full_data$languages == "de"] <- "no"
+
+head(full_data$ALL_cleaned[full_data$languages == "sv"], 100)
+
+full_data$languages[full_data$ALL_cleaned == "Forbrenning"] <- "no"
+
+table(full_data$ALL_cleaned[full_data$languages == "sv"])
+
+# Looks like most of it is actually swedish
+
+table(full_data$ALL_cleaned[full_data$languages == "sv" & full_data$length_ALL_cleaned > 100])
+
+# Quite informative reports, so I'll keep them in for now.
+
+head(full_data$ALL_cleaned[full_data$languages == "en"])
+
+# Still not very promising results... Let's look at another method with a pre-
+# trained model
+##### fastText ######
+
+library(fastText)
+
+file_path <- file.path("lid.176.bin")
+
+full_data$language <- fastText::language_identification(input_obj = full_data$ALL_cleaned,
+                                                        pre_trained_language_model_path = file_path,
+                                                        k = 1,
+                                                        th = 0.0,
+                                                        threads = 1,
+                                                        verbose = TRUE)
+
+full_data$language_detected <- paste0(full_data$language$iso_lang_1)
+full_data$language_probability <- paste0(full_data$language$prob_1)
+
+table(full_data$language_detected)
+
+head(full_data$ALL_cleaned[full_data$language_detected == "da"], 100)
+
+# The word "fremmedlegeme" is wrongfully assumed to be danish
+sum(table(full_data$ALL_cleaned[full_data$ALL_cleaned == "Fremmedlegeme"]))
+
+# 1115 of the free text fields are just the word fremmedlegeme.
+
+table(full_data$antall_skadet[full_data$ALL_cleaned == "Fremmedlegeme"])
+table(full_data$ulykketype[full_data$ALL_cleaned == "Fremmedlegeme"])
+
+# And all of the cases are work accidents with only 1 injured person
+# This does not seem like a good solution, let's go back to the drawing board.
+
+# We'll do it for each variable before we merge them, maybe that will help.
+
+full_data$languages_direkteårsak_person_fritekst <- detect_language(removePunctuation(removeNumbers(full_data$direkteårsak_person_fritekst)))
+full_data$languages_direkteårsak_ytre_fritekst <- detect_language(removePunctuation(removeNumbers(full_data$direkteårsak_ytre_fritekst)))
+full_data$languages_direkteårsak_utstyr_fritekst <- detect_language(removePunctuation(removeNumbers(full_data$direkteårsak_utstyr_fritekst)))
+full_data$languages_indirekteårsak_person_fritekst <- detect_language(removePunctuation(removeNumbers(full_data$indirekteårsak_person_fritekst)))
+full_data$languages_indirekteårsak_arbeidsmiljø_fritekst <- detect_language(removePunctuation(removeNumbers(full_data$indirekteårsak_arbeidsmiljø_fritekst)))
+full_data$languages_indirekteårsak_ytre_fritekst <- detect_language(removePunctuation(removeNumbers(full_data$indirekteårsak_ytre_fritekst)))
+full_data$languages_indirekteårsak_utstyr_fritekst <- detect_language(removePunctuation(removeNumbers(full_data$indirekteårsak_utstyr_fritekst)))
+full_data$languages_bakenforårsak_ledelse_fritekst <- detect_language(removePunctuation(removeNumbers(full_data$bakenforårsak_ledelse_fritekst)))
+full_data$languages_bakenforårsak_prosedyre_fritekst <- detect_language(removePunctuation(removeNumbers(full_data$bakenforårsak_prosedyre_fritekst)))
+full_data$languages_fritekst <- detect_language(removePunctuation(removeNumbers(full_data$fritekst)))
+full_data$languages_hendelsesforløp <- detect_language(removePunctuation(removeNumbers(full_data$hendelsesforløp)))
+full_data$languages_personskade <- detect_language(removePunctuation(removeNumbers(full_data$personskade)))
+full_data$languages_annenskade <- detect_language(removePunctuation(removeNumbers(full_data$annenskade)))
+
+table(full_data$languages_direkteårsak_person_fritekst)
+table(full_data$languages_direkteårsak_ytre_fritekst)
+table(full_data$languages_direkteårsak_utstyr_fritekst)
+table(full_data$languages_indirekteårsak_person_fritekst)
+table(full_data$languages_indirekteårsak_arbeidsmiljø_fritekst)
+table(full_data$languages_indirekteårsak_ytre_fritekst)
+table(full_data$languages_indirekteårsak_utstyr_fritekst)
+table(full_data$languages_bakenforårsak_ledelse_fritekst)
+table(full_data$languages_bakenforårsak_prosedyre_fritekst)
+table(full_data$languages_fritekst)
+table(full_data$languages_hendelsesforløp)
+table(full_data$languages_personskade)
+table(full_data$languages_annenskade)
+
+languages_before_merge <- full_data %>%
+  gather("key", "value",
+    languages_direkteårsak_person_fritekst,
+    languages_direkteårsak_ytre_fritekst,
+    languages_direkteårsak_utstyr_fritekst,
+    languages_indirekteårsak_person_fritekst,
+    languages_indirekteårsak_arbeidsmiljø_fritekst,
+    languages_indirekteårsak_ytre_fritekst,
+    languages_indirekteårsak_utstyr_fritekst,
+    languages_bakenforårsak_ledelse_fritekst,
+    languages_bakenforårsak_prosedyre_fritekst,
+    languages_fritekst,
+    languages_hendelsesforløp,
+    languages_personskade,
+    languages_annenskade
+  ) %>%
+  group_by(value) %>%
+  summarise(n = n())
+
+languages_before_merge$n[languages_before_merge$value == "no"]
+
+cols <- c(
+  "languages_direkteårsak_person_fritekst",
+  "languages_direkteårsak_ytre_fritekst",
+  "languages_direkteårsak_utstyr_fritekst",
+  "languages_indirekteårsak_person_fritekst",
+  "languages_indirekteårsak_arbeidsmiljø_fritekst",
+  "languages_indirekteårsak_ytre_fritekst",
+  "languages_indirekteårsak_utstyr_fritekst",
+  "languages_bakenforårsak_ledelse_fritekst",
+  "languages_bakenforårsak_prosedyre_fritekst",
+  "languages_fritekst",
+  "languages_hendelsesforløp",
+  "languages_personskade",
+  "languages_annenskade"
+)
+
+
+full_data$languages_combined <- apply( full_data[ , cols ] , 1 , paste , collapse = "-" )
+
+full_data <- full_data[ , !( names(full_data) %in% cols ) ]
+
+full_data$languages_combined_count <- str_count(full_data$languages_combined, pattern = "no")
+
+table(full_data$languages_combined_count)
+
+# 1024 results have 0 instances of norwegian detected. This is perhaps not the 
+# only way to determine languages, but it seems to be the best one after much
+# trial and error.
+
+# Removing numbers and puntuation from the variables:
+
+full_data$direkteårsak_person_fritekst <- removePunctuation(removeNumbers(full_data$direkteårsak_person_fritekst))
+full_data$direkteårsak_ytre_fritekst <- removePunctuation(removeNumbers(full_data$direkteårsak_ytre_fritekst))
+full_data$direkteårsak_utstyr_fritekst <- removePunctuation(removeNumbers(full_data$direkteårsak_utstyr_fritekst))
+full_data$indirekteårsak_person_fritekst <- removePunctuation(removeNumbers(full_data$indirekteårsak_person_fritekst))
+full_data$indirekteårsak_arbeidsmiljø_fritekst <- removePunctuation(removeNumbers(full_data$indirekteårsak_arbeidsmiljø_fritekst))
+full_data$indirekteårsak_ytre_fritekst <- removePunctuation(removeNumbers(full_data$indirekteårsak_ytre_fritekst))
+full_data$indirekteårsak_utstyr_fritekst <- removePunctuation(removeNumbers(full_data$indirekteårsak_utstyr_fritekst))
+full_data$bakenforårsak_ledelse_fritekst <- removePunctuation(removeNumbers(full_data$bakenforårsak_ledelse_fritekst))
+full_data$bakenforårsak_prosedyre_fritekst <- removePunctuation(removeNumbers(full_data$bakenforårsak_prosedyre_fritekst))
+full_data$fritekst <- removePunctuation(removeNumbers(full_data$fritekst))
+full_data$hendelsesforløp <- removePunctuation(removeNumbers(full_data$hendelsesforløp))
+full_data$personskade <- removePunctuation(removeNumbers(full_data$personskade))
+full_data$annenskade <- removePunctuation(removeNumbers(full_data$annenskade))
+
+# Trying fastText's pre-trained model once:
+
+full_data$languages2_direkteårsak_person_fritekst <-
+  fastText::language_identification(
+      input_obj = full_data$direkteårsak_person_fritekst,
+      pre_trained_language_model_path = file_path,
+      k = 1,
+      th = 0.0,
+      threads = 1,
+      verbose = TRUE
+    )
+
+full_data$languages2_direkteårsak_ytre_fritekst <-
+  language_identification(
+    input_obj = full_data$direkteårsak_ytre_fritekst,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+full_data$languages2_direkteårsak_utstyr_fritekst <-
+  language_identification(
+    input_obj = full_data$direkteårsak_utstyr_fritekst,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+full_data$languages2_indirekteårsak_person_fritekst <-
+  language_identification(
+    input_obj = full_data$indirekteårsak_person_fritekst,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+full_data$languages2_indirekteårsak_arbeidsmiljø_fritekst <-
+  language_identification(
+    input_obj = full_data$indirekteårsak_arbeidsmiljø_fritekst,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+full_data$languages2_indirekteårsak_ytre_fritekst <-
+  language_identification(
+    input_obj = full_data$indirekteårsak_ytre_fritekst,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+full_data$languages2_indirekteårsak_utstyr_fritekst <-
+  language_identification(
+    input_obj = full_data$indirekteårsak_utstyr_fritekst,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+full_data$languages2_bakenforårsak_ledelse_fritekst <-
+  language_identification(
+    input_obj = full_data$bakenforårsak_ledelse_fritekst,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+full_data$languages2_bakenforårsak_prosedyre_fritekst <-
+  language_identification(
+    input_obj = full_data$bakenforårsak_prosedyre_fritekst,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+full_data$languages2_fritekst <-
+  language_identification(
+    input_obj = full_data$fritekst,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+# Does not work.
+full_data$hendelsesforløp <- as.character(str_squish(full_data$hendelsesforløp))
+
+full_data$languages2_hendelsesforløp <-
+  language_identification(
+    input_obj = full_data$hendelsesforløp,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+full_data$languages2_personskade <-
+  language_identification(
+    input_obj = full_data$personskade,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+full_data$languages2_annenskade <-
+  language_identification(
+    input_obj = full_data$annenskade,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
+
+# Getting the languages predicted:
+
+full_data$languages2_direkteårsak_person_fritekst_detected <- paste0(full_data$languages2_direkteårsak_person_fritekst$iso_lang_1)
+full_data$languages2_direkteårsak_ytre_fritekst_detected <- paste0(full_data$languages2_direkteårsak_ytre_fritekst$iso_lang_1)
+full_data$languages2_direkteårsak_utstyr_fritekst_detected <- paste0(full_data$languages2_direkteårsak_utstyr_fritekst$iso_lang_1)
+full_data$languages2_indirekteårsak_person_fritekst_detected <- paste0(full_data$languages2_indirekteårsak_person_fritekst$iso_lang_1)
+full_data$languages2_indirekteårsak_arbeidsmiljø_fritekst_detected <- paste0(full_data$languages2_indirekteårsak_arbeidsmiljø_fritekst$iso_lang_1)
+full_data$languages2_indirekteårsak_ytre_fritekst_detected <- paste0(full_data$languages2_indirekteårsak_ytre_fritekst$iso_lang_1)
+full_data$languages2_indirekteårsak_utstyr_fritekst_detected <- paste0(full_data$languages2_indirekteårsak_utstyr_fritekst$iso_lang_1)
+full_data$languages2_bakenforårsak_ledelse_fritekst_detected <- paste0(full_data$languages2_bakenforårsak_ledelse_fritekst$iso_lang_1)
+full_data$languages2_bakenforårsak_prosedyre_fritekst_detected <- paste0(full_data$languages2_bakenforårsak_prosedyre_fritekst$iso_lang_1)
+full_data$languages2_fritekst_detected <- paste0(full_data$languages2_fritekst$iso_lang_1)
+full_data$languages2_hendelsesforløp_detected <- paste0(full_data$languages2_hendelsesforløp$iso_lang_1)
+full_data$languages2_personskade_detected <- paste0(full_data$languages2_personskade$iso_lang_1)
+full_data$languages2_annenskade_detected <- paste0(full_data$languages2_annenskade$iso_lang_1)
+
+# Getting the probabilites
+full_data$languages2_direkteårsak_person_fritekst_probability <- paste0(full_data$languages2_direkteårsak_person_fritekst$prob_1)
+full_data$languages2_direkteårsak_ytre_fritekst_probability <- paste0(full_data$languages2_direkteårsak_ytre_fritekst$prob_1)
+full_data$languages2_direkteårsak_utstyr_fritekst_probability <- paste0(full_data$languages2_direkteårsak_utstyr_fritekst$prob_1)
+full_data$languages2_indirekteårsak_person_fritekst_probability <- paste0(full_data$languages2_indirekteårsak_person_fritekst$prob_1)
+full_data$languages2_indirekteårsak_arbeidsmiljø_fritekst_probability <- paste0(full_data$languages2_indirekteårsak_arbeidsmiljø_fritekst$prob_1)
+full_data$languages2_indirekteårsak_ytre_fritekst_probability <- paste0(full_data$languages2_indirekteårsak_ytre_fritekst$prob_1)
+full_data$languages2_indirekteårsak_utstyr_fritekst_probability <- paste0(full_data$languages2_indirekteårsak_utstyr_fritekst$prob_1)
+full_data$languages2_bakenforårsak_ledelse_fritekst_probability <- paste0(full_data$languages2_bakenforårsak_ledelse_fritekst$prob_1)
+full_data$languages2_bakenforårsak_prosedyre_fritekst_probability <- paste0(full_data$languages2_bakenforårsak_prosedyre_fritekst$prob_1)
+full_data$languages2_fritekst_probability <- paste0(full_data$languages2_fritekst$prob_1)
+full_data$languages2_hendelsesforløp_probability <- paste0(full_data$languages2_hendelsesforløp$prob_1)
+full_data$languages2_personskade_probability <- paste0(full_data$languages2_personskade$prob_1)
+full_data$languages2_annenskade_probability <- paste0(full_data$languages2_annenskade$prob_1)
+
+
+
+languages2_before_merge2 <- full_data %>%
+  gather("key", "value",
+         languages2_direkteårsak_person_fritekst_detected,
+         languages2_direkteårsak_ytre_fritekst_detected,
+         languages2_direkteårsak_utstyr_fritekst_detected,
+         languages2_indirekteårsak_person_fritekst_detected,
+         languages2_indirekteårsak_arbeidsmiljø_fritekst_detected,
+         languages2_indirekteårsak_ytre_fritekst_detected,
+         languages2_indirekteårsak_utstyr_fritekst_detected,
+         languages2_bakenforårsak_ledelse_fritekst_detected,
+         languages2_bakenforårsak_prosedyre_fritekst_detected,
+         languages2_fritekst_detected,
+         languages2_hendelsesforløp_detected,
+         languages2_personskade_detected,
+         languages2_annenskade_detected
+  ) %>%
+  group_by(value) %>%
+  summarise(n = n())
+
+languages2_before_merge2$n[languages2_before_merge2$value == "no"]
+
+cols2 <- c(
+  "languages2_direkteårsak_person_fritekst_detected",
+  "languages2_direkteårsak_ytre_fritekst_detected",
+  "languages2_direkteårsak_utstyr_fritekst_detected",
+  "languages2_indirekteårsak_person_fritekst_detected",
+  "languages2_indirekteårsak_arbeidsmiljø_fritekst_detected",
+  "languages2_indirekteårsak_ytre_fritekst_detected",
+  "languages2_indirekteårsak_utstyr_fritekst_detected",
+  "languages2_bakenforårsak_ledelse_fritekst_detected",
+  "languages2_bakenforårsak_prosedyre_fritekst_detected",
+  "languages2_fritekst_detected",
+  "languages2_hendelsesforløp_detected",
+  "languages2_personskade_detected",
+  "languages2_annenskade_detected"
+)
+
+full_data$languages_combined2 <- apply( full_data[ , cols2 ] , 1 , paste , collapse = "-" )
+
+full_data <- full_data[ , !( names(full_data) %in% cols2 ) ]
+
+full_data$languages_combined_count2 <- str_count(full_data$languages_combined2, pattern = "no")
+
+table(full_data$languages_combined_count2)
+
+table(full_data$languages_combined_count)
+
+# Manually checking the reports for Norwegian
+
+head(full_data$ALL_cleaned[full_data$languages_combined_count2 == 0], 50)
+
+head(full_data$ALL_cleaned[full_data$languages_combined_count == 0], 50)
+
+# Google's version is better with 7/50 and the pre-trained model with 15/50.
+
+full_data %>%
+  count(languages) %>%
+  ggplot(aes(languages, n, label = languages)) +
+  geom_col() +
+  theme_bw() +
+  labs(x = "Language codes",
+       y = "Count",
+       title = "Distribution of languages in the reports") +
+  geom_text(aes(label = n), nudge_y = 600) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+
+table(full_data$length_ALL_cleaned[full_data$languages_combined_count == 0])
+
+full_data <- full_data[!duplicated(full_data$ALL), ]
+
+tail(full_data$ALL_cleaned[full_data$languages_combined_count == 0])
+
+
+full_data2 <- full_data[full_data$languages_combined_count != 0, ]
 
 #### Classification model ####
 
@@ -904,7 +1342,7 @@ multi_lasso_rs
 
 autoplot(multi_lasso_rs) +
   labs(
-    title = "Lasso model performance across regularization penalties",
+    title = "Lasso model performance across regularisation penalties",
     subtitle = "Performance metrics can be used to identity the best penalty"
   )+
   theme_bw()
@@ -968,6 +1406,39 @@ multi_lasso_rs_small <- tune_grid(
 )
 
 multi_lasso_rs_small
+
+collect_metrics(multi_lasso_rs_small)
+
+multi_lasso_rs_small %>%
+  show_best("roc_auc")
+
+# What's the best accuracy?
+
+best_acc_small <- multi_lasso_rs_small %>%
+  show_best("accuracy")
+
+best_acc_small
+
+# Making a confusion matrix
+
+multi_lasso_rs_small %>%
+  collect_predictions() %>%
+  filter(penalty == best_acc_small$penalty) %>%
+  #filter(id == "Fold01") %>%
+  conf_mat(ulykketype, .pred_class) %>%
+  autoplot(type = "heatmap") +
+  scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1.1,
+      color = "black"
+    ))
+
+# No differences between the different sizes of lambda regularisation
 
 # Using a sparse encoding:
 
@@ -1054,7 +1525,7 @@ nb_spec
 
 library(naivebayes)
 
-nb_fit <- MTO_full_data_wf %>%
+MTO_nb_fit <- MTO_full_data_wf %>%
   add_model(nb_spec) %>%
   parsnip::fit(data = MTO_full_data_train)
 
@@ -1071,30 +1542,51 @@ MTO_nb_wf
 
 # Adding resamples
 
-nb_rs <- fit_resamples(
+MTO_nb_rs <- fit_resamples(
   MTO_nb_wf,
   MTO_full_data_folds,
   control = control_resamples(save_pred = TRUE)
 )
 
-MTO_nb_rs_metrics <- collect_metrics(nb_rs)
-MTO_nb_rs_predictions <- collect_predictions(nb_rs)
+MTO_nb_rs_metrics <- collect_metrics(MTO_nb_rs)
+MTO_nb_rs_predictions <- collect_predictions(MTO_nb_rs)
 
 MTO_nb_rs_metrics
 
-MTO_nb_rs_predictions %>%
-  filter(id == "Fold01") %>% 
-  # group_by(id) %>% cannot group by id because it's so bad
-  roc_curve(truth = MTO, .pred_Man) %>%
-  autoplot() +
+MTO_nb_rs_acc <- MTO_nb_rs %>%
+  show_best("accuracy")
+
+MTO_nb_rs %>%
+  #filter(id == "Fold01") %>% 
+  collect_predictions() %>%
+  conf_mat(MTO, .pred_class) %>%
+  #group_by(id) %>%
+  #roc_curve(truth = MTO, .pred_Man) %>%
+  autoplot(type = "heatmap") +
   labs(
     color = NULL,
-    title = "ROC curve for the accident type based on the MTO framework",
-    subtitle = "Each resample fold is shown in a different color"
+    title = "Confusion matrix of MTO using Naive Bayes"
   )
 
-conf_mat_resampled(nb_rs, tidy = FALSE) %>%
+conf_mat_resampled(MTO_nb_rs, tidy = FALSE) %>%
   autoplot(type = "heatmap")
+
+multi_lasso_rs_small %>%
+  collect_predictions() %>%
+  filter(penalty == best_acc_small$penalty) %>%
+  #filter(id == "Fold01") %>%
+  conf_mat(ulykketype, .pred_class) %>%
+  autoplot(type = "heatmap") +
+  scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1.1,
+      color = "black"
+    ))
 
 # That was not useful, as most cases were appointed to the Man category.
 
@@ -1182,7 +1674,7 @@ MTO_man_nb_rs_predictions <- collect_predictions(MTO_man_nb_rs)
 MTO_man_nb_rs_metrics
 
 MTO_man_nb_rs_predictions %>%
-  #filter(id == "Fold01") %>% 
+#  filter(id == "Fold01") %>% 
   group_by(id) %>% 
   roc_curve(truth = MTO_man, .pred_Man) %>%
   autoplot() +
@@ -1195,40 +1687,10 @@ MTO_man_nb_rs_predictions %>%
 conf_mat_resampled(MTO_man_nb_rs, tidy = FALSE) %>%
   autoplot(type = "heatmap")
 
-library(vip)
-
-MTO_man_imp <- pull_workflow_fit(final_fitted$.workflow[[1]]) %>%
-  vi(lambda = choose_acc$penalty)
-
-# Binary - MTO_man
-MTO_imp %>%
-  mutate(
-    Sign = case_when(Sign == "POS" ~ "Less about credit reporting",
-                     Sign == "NEG" ~ "More about credit reporting"),
-    Importance = abs(Importance),
-    Variable = str_remove_all(Variable, "tfidf_"),
-    Variable = str_remove_all(Variable, "textfeature_narrative_copy_")
-  ) %>%
-  group_by(Sign) %>%
-  top_n(20, Importance) %>%
-  ungroup %>%
-  ggplot(aes(x = Importance,
-             y = fct_reorder(Variable, Importance),
-             fill = Sign)) +
-  geom_col(show.legend = FALSE) +
-  scale_x_continuous(expand = c(0, 0)) +
-  facet_wrap(~Sign, scales = "free") +
-  labs(
-    y = NULL,
-    title = "Variable importance for predicting the topic of a CFPB complaint",
-    subtitle = paste0("These features are the most important in predicting\n",
-                      "whether a complaint is about credit or not")
-  )
-
+# Did not get very much better results, unfortunately.
 
 # Trying a lasso model which is more robust for data disparity
-
-# For multiple classes for classification, which are rather unbalanced:
+# with multiple classes for classification, which are rather unbalanced:
 library(themis)
 
 MTO_unbalanced_full_data_rec <- recipe(MTO ~ ALL, data = MTO_full_data_train) %>%
@@ -1236,8 +1698,8 @@ MTO_unbalanced_full_data_rec <- recipe(MTO ~ ALL, data = MTO_full_data_train) %>
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tokenfilter(ALL, max_tokens = 1e4) %>%
-  step_tfidf(ALL) %>%
+  step_tokenfilter(ALL, max_tokens = 1e3) %>%
+  step_tfidf(ALL) %>% # downsampling 
   step_downsample(MTO)
 
 MTO_unbalanced_vfolds <- vfold_cv(MTO_full_data_train)
@@ -1355,20 +1817,47 @@ multi_lasso_rs_small <- tune_grid(
 
 multi_lasso_rs_small
 
-# Only three cases
+best_acc_small <- multi_lasso_rs_small %>% show_best("accuracy")
+
+multi_lasso_rs_small %>%
+  collect_predictions() %>%
+  filter(penalty == best_acc_small$penalty) %>%
+  # filter(id == "Fold01") %>%
+  #filter(.pred_class != MTO) %>%
+  conf_mat(MTO, .pred_class) %>%
+  autoplot(type = "heatmap") +
+  scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, 25)) 
+# theme(
+#   axis.text.x = element_text(
+#     angle = 60,
+#     size = 10,
+#     vjust = 1,
+#     hjust = 1.1,
+#     color = "black"
+#   ))
+
+
+# Trying a sparse version which would cut down on computing time
+
+tune_spec2 <- multinom_reg(penalty = tune(), mixture = 1) %>%
+  set_mode("classification") %>%
+  set_engine("glmnet")
+
+tune_spec2
 
 sparse_wf <- workflow() %>%
-  add_recipe(MTO_full_data_rec, blueprint = sparse_bp) %>%
-  add_model(tune_spec)
+  add_recipe(MTO_unbalanced_full_data_rec, blueprint = sparse_bp) %>%
+  add_model(tune_spec2)
 
 tune_wf <- workflow() %>%
-  add_recipe(MTO_full_data_rec) %>%
-  add_model(tune_spec)
+  add_recipe(MTO_unbalanced_full_data_rec, blueprint = sparse_bp) %>%
+  add_model(tune_spec2)
 
 set.seed(2022)
 tune_rs <- tune_grid(
   tune_wf,
-  MTO_full_data_folds,
+  MTO_unbalanced_vfolds,
   grid = lambda_grid,
   control = control_resamples(save_pred = TRUE)
 )
@@ -1387,15 +1876,19 @@ autoplot(tune_rs) +
 tune_rs %>%
   show_best("roc_auc")
 
+tune_rs %>%
+  show_best("accuracy")
+
 chosen_auc <- tune_rs %>%
   select_by_one_std_err(metric = "roc_auc", -penalty)
 
 chosen_auc
 
+# Continue here.
 
 final_lasso <- finalize_workflow(tune_wf, chosen_auc)
 
-fitted_lasso <- parsnip::fit(final_lasso, MTO_man_full_data_train)
+fitted_lasso <- parsnip::fit(final_lasso, MTO_full_data_train)
 
 fitted_lasso %>%
   pull_workflow_fit() %>%
@@ -1411,6 +1904,18 @@ fitted_lasso %>%
 
 # Factors that assume man
 
+library(vip)
+
+set.seed(345)
+MTO_multilasso_imp <- tune_wf %>%
+  add_model(tune_spec2) %>%
+  fit(MTO_full_data_train) %>%
+  pull_workflow_fit() %>%
+  vi(
+    method = "permute", nsim = 10,
+    target = "Man", metric = "auc", reference_class = "Organisation",
+    pred_wrapper = kernlab::predict, train = juice(avatar_prep)
+  )
 
 # Tuning the recipe a little further:
 # Removing words that appear fewer than 10 times, possible typos etc.
@@ -1448,13 +1953,15 @@ tune_rs <- tune_grid(
   metrics = metric_set(accuracy, sensitivity, specificity)
 )
 
+collect_metrics(tune_rs)
 
 autoplot(tune_rs) +
   labs(
     color = "Number of tokens",
     title = "Model performance across regularization penalties and tokens",
     subtitle = paste("We can choose a simpler model with higher regularization")
-  )
+  )+
+  theme_bw()
 
 
 choose_acc <- tune_rs %>%
@@ -1487,6 +1994,17 @@ collect_predictions(final_fitted)  %>%
     subtitle = "With final tuned lasso regularized classifier on the test set"
   )
 
+
+# SVM Classification:
+
+svm_classification_full_data_rec <-
+  recipe(ulykketype ~ ALL, data = full_data_train) %>%
+  step_tokenize(ALL) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(language = "en") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
+  step_tokenfilter(ALL, max_tokens = 1e3) %>%
+  step_tfidf(ALL)
 
 # Extracting results
 
@@ -1556,6 +2074,64 @@ collect_metrics(rf_rs)
 
 library(performanceEstimation)
 classificationMetrics()
+
+# Trying to do something with n-grams:
+# Does not work, probably doesn't have to either.
+ngram_rec_MTO <- function(ngram_options) {
+  recipe(MTO ~ ALL, data = MTO_full_data_train) %>%
+    step_stopwords(language = "no") %>%
+    step_stopwords(language = "en") %>%
+    step_stopwords(custom_stopword_source = custom_words) %>%
+    step_tokenize(ALL, token = "ngrams", options = ngram_options) %>%
+    step_tokenfilter(ALL, max_tokens = 1e3) %>%
+    step_tfidf(ALL)
+  }
+
+multi_spec_ngram_wf <- workflow() %>%
+  add_model(multi_spec)
+
+fit_ngram <- function(ngram_options) {
+  fit_resamples(multi_spec_ngram_wf %>% add_recipe(ngram_rec_MTO(ngram_options)),
+                MTO_full_data_folds)
+}
+
+# Seeing the differences between uni-, bi- and trigrams for SVM
+
+set.seed(123)
+unigram_MTO_rs <- fit_ngram(list(n = 1))
+
+set.seed(234)
+bigram_MTO_rs <- fit_ngram(list(n = 2, n_min = 1))
+
+set.seed(345)
+trigram_MTO_rs <- fit_ngram(list(n = 3, n_min = 1))
+
+set.seed(567)
+quadgram_MTO_rs <- fit_ngram(list(n = 3, n_min = 1))
+
+list(
+  `1` = unigram_rs,
+  `1 and 2` = bigram_rs,
+  `1, 2, and 3` = trigram_rs,
+  `1, 2, 3 and 4` = quadgram_rs
+) %>%
+  map_dfr(collect_metrics, .id = "name") %>%
+  filter(.metric == "rmse") %>%
+  ggplot(aes(name, mean, color = name)) +
+  geom_crossbar(aes(ymin = mean - std_err, ymax = mean + std_err), alpha = 0.6) +
+  geom_point(size = 3, alpha = 0.8) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(
+    x = "Degree of n-grams",
+    y = "RMSE",
+    title = "Model performance for different degrees of n-gram tokenization",
+    subtitle = "For the same number of tokens, unigrams performed best"
+  )
+
+
+# Adding predictions to observations:
+
 
 
 #### Regression model ####
