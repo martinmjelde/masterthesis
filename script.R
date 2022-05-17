@@ -124,8 +124,8 @@ top_terms_by_topic_LDA <-
       top_terms %>% # take the top terms
         mutate(term = reorder(term, beta)) %>% # sort terms by beta value
         ggplot(aes(term, beta, fill = factor(topic))) + # plot beta by theme
-        geom_col(show.legend = FALSE) + # as a bar plot
         theme_bw() +
+        geom_col(show.legend = FALSE) + # as a bar plot
         facet_wrap(~ topic, scales = "free") + # which each topic in a seperate plot
         labs(x = NULL, y = "Beta") + # no x label, change y label
         coord_flip() # turn bars sideways
@@ -2540,7 +2540,9 @@ norwegian_stop_words <-
 full_data_DTM_tidy_cleaned <-
   full_data_DTM_tidy %>% # take our tidy dtm and...
   anti_join(norwegian_stop_words, by = c("term" = "word")) %>% # remove Norwegian stopwords and custom words
-  anti_join(stop_words, by = c("term" = "word")) # remove English stopwords as well
+  anti_join(stop_words, by = c("term" = "word")) %>% # remove English stopwords as well
+  removeNumbers() %>%
+  removePuntuation()
 
 # reconstruct cleaned documents (so that each word shows up the correct number of times)
 cleaned_documents <-          full_data_DTM_tidy_cleaned %>%
@@ -2588,7 +2590,7 @@ top_terms_by_topic_LDA(cleaned_documents_stem$terms, number_of_topics = 4)
 
 tfidf_bygroup_ALL <- top_terms_by_topic_tfidf(
   text_df = full_data,
-  text_column = ALL,
+  text_column = ALL_cleaned,
   group = ulykketype,
   plot = T
 )
@@ -2703,7 +2705,7 @@ original_tf <-
 vocabulary <-
   tf$term[tf$term_freq > 1 & tf$doc_freq < nrow(dtm) / 2]
 
-k_list <- seq(1, 50, by = 1)
+k_list <- seq(1, 200, by = 1)
 setwd("~/Master/masterthesis")
 
 model_dir <-
@@ -2714,7 +2716,7 @@ if (!dir.exists(model_dir))
 library(parallel)
 model_list <-
   TmParallelApply(
-    cpus = 8,
+    cpus = 16,
     X = k_list,
     FUN = function(k) {
       filename = file.path(model_dir, paste0(k, "_topics.rda"))
