@@ -935,19 +935,19 @@ table(full_data$languages_annenskade)
 
 languages_before_merge <- full_data %>%
   gather("key", "value",
-    languages_direkteårsak_person_fritekst,
-    languages_direkteårsak_ytre_fritekst,
-    languages_direkteårsak_utstyr_fritekst,
-    languages_indirekteårsak_person_fritekst,
-    languages_indirekteårsak_arbeidsmiljø_fritekst,
-    languages_indirekteårsak_ytre_fritekst,
-    languages_indirekteårsak_utstyr_fritekst,
-    languages_bakenforårsak_ledelse_fritekst,
-    languages_bakenforårsak_prosedyre_fritekst,
-    languages_fritekst,
-    languages_hendelsesforløp,
-    languages_personskade,
-    languages_annenskade
+         languages_direkteårsak_person_fritekst,
+         languages_direkteårsak_ytre_fritekst,
+         languages_direkteårsak_utstyr_fritekst,
+         languages_indirekteårsak_person_fritekst,
+         languages_indirekteårsak_arbeidsmiljø_fritekst,
+         languages_indirekteårsak_ytre_fritekst,
+         languages_indirekteårsak_utstyr_fritekst,
+         languages_bakenforårsak_ledelse_fritekst,
+         languages_bakenforårsak_prosedyre_fritekst,
+         languages_fritekst,
+         languages_hendelsesforløp,
+         languages_personskade,
+         languages_annenskade
   ) %>%
   group_by(value) %>%
   summarise(n = n())
@@ -1003,13 +1003,13 @@ full_data$annenskade <- removePunctuation(removeNumbers(full_data$annenskade))
 
 full_data$languages2_direkteårsak_person_fritekst <-
   fastText::language_identification(
-      input_obj = full_data$direkteårsak_person_fritekst,
-      pre_trained_language_model_path = file_path,
-      k = 1,
-      th = 0.0,
-      threads = 1,
-      verbose = TRUE
-    )
+    input_obj = full_data$direkteårsak_person_fritekst,
+    pre_trained_language_model_path = file_path,
+    k = 1,
+    th = 0.0,
+    threads = 1,
+    verbose = TRUE
+  )
 
 full_data$languages2_direkteårsak_ytre_fritekst <-
   language_identification(
@@ -1240,7 +1240,7 @@ full_data <- full_data[!duplicated(full_data$ALL), ]
 tail(full_data$ALL_cleaned[full_data$languages_combined_count == 0])
 
 
-full_data2 <- full_data[full_data$languages_combined_count != 0, ]
+full_data <- full_data[full_data$languages_combined_count != 0, ]
 
 #### Classification model ####
 
@@ -1381,7 +1381,7 @@ multi_lasso_rs %>%
 multi_lasso_rs %>%
   collect_predictions() %>%
   filter(penalty == best_acc$penalty) %>%
- # filter(id == "Fold01") %>%
+  # filter(id == "Fold01") %>%
   filter(.pred_class != ulykketype) %>%
   conf_mat(ulykketype, .pred_class) %>%
   autoplot(type = "heatmap") +
@@ -1674,7 +1674,7 @@ MTO_man_nb_rs_predictions <- collect_predictions(MTO_man_nb_rs)
 MTO_man_nb_rs_metrics
 
 MTO_man_nb_rs_predictions %>%
-#  filter(id == "Fold01") %>% 
+  #  filter(id == "Fold01") %>% 
   group_by(id) %>% 
   roc_curve(truth = MTO_man, .pred_Man) %>%
   autoplot() +
@@ -1766,6 +1766,18 @@ best_roc <- multi_lasso_rs %>%
 
 best_roc  
 
+# AUCROC
+
+collect_predictions(multi_lasso_rs)  %>%
+  roc_curve(truth = MTO, .pred_Man) %>%
+  autoplot() +
+  labs(
+    color = NULL,
+    title = "ROC curve for MTO",
+    subtitle = "With final tuned lasso regularized classifier on the test set"
+  )
+
+
 # Making a confusion matrix
 
 multi_lasso_rs %>%
@@ -1776,15 +1788,15 @@ multi_lasso_rs %>%
   autoplot(type = "heatmap") +
   scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
   scale_x_discrete(labels = function(x) str_wrap(x, 25))
-  #theme_bw(legend = "none")
-  # theme(
-  #   axis.text.x = element_text(
-  #     angle = 60,
-  #     size = 10,
-  #     vjust = 1,
-  #     hjust = 1.1,
-  #     color = "black"
-  #   ))
+#theme_bw(legend = "none")
+# theme(
+#   axis.text.x = element_text(
+#     angle = 60,
+#     size = 10,
+#     vjust = 1,
+#     hjust = 1.1,
+#     color = "black"
+#   ))
 
 # Removing all the correctly predicted observations:
 
@@ -1797,14 +1809,14 @@ multi_lasso_rs %>%
   autoplot(type = "heatmap") +
   scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
   scale_x_discrete(labels = function(x) str_wrap(x, 25)) 
-  # theme(
-  #   axis.text.x = element_text(
-  #     angle = 60,
-  #     size = 10,
-  #     vjust = 1,
-  #     hjust = 1.1,
-  #     color = "black"
-  #   ))
+# theme(
+#   axis.text.x = element_text(
+#     angle = 60,
+#     size = 10,
+#     vjust = 1,
+#     hjust = 1.1,
+#     color = "black"
+#   ))
 
 # Using a smaller lambda
 
@@ -1902,6 +1914,8 @@ fitted_lasso %>%
   tidy() %>%
   arrange(estimate)
 
+
+
 # Factors that assume man
 
 library(vip)
@@ -1938,7 +1952,7 @@ sparse_wf_v2 <- MTO_full_data_wf %>%
 
 final_grid <- grid_regular(
   penalty(range = c(-4, 0)),
-  max_tokens(range = c(1e3, 3e3)),
+  max_tokens(range = c(1e3, 5e3)),
   levels = c(penalty = 20, max_tokens = 3)
 )
 
@@ -1978,21 +1992,12 @@ collect_metrics(final_fitted)
 
 # Confusion matrix
 
-collect_predictions(final_fitted) %>%
+final_fitted %>%
+  collect_predictions() %>%
   conf_mat(truth = MTO, estimate = .pred_class) %>%
   autoplot(type = "heatmap")
 
-
-# AUCROC
-
-collect_predictions(final_fitted)  %>%
-  roc_curve(truth = MTO, .pred_Man) %>%
-  autoplot() +
-  labs(
-    color = NULL,
-    title = "ROC curve for US Consumer Finance Complaints",
-    subtitle = "With final tuned lasso regularized classifier on the test set"
-  )
+# This is for the testing data, and an accuracy of .903 is pretty good.
 
 
 # SVM Classification:
@@ -2073,65 +2078,28 @@ rf_rs <- fit_resamples(full_data_wf %>% add_model(rf_spec),
 collect_metrics(rf_rs)
 
 library(performanceEstimation)
-classificationMetrics()
 
-# Trying to do something with n-grams:
-# Does not work, probably doesn't have to either.
-ngram_rec_MTO <- function(ngram_options) {
-  recipe(MTO ~ ALL, data = MTO_full_data_train) %>%
-    step_stopwords(language = "no") %>%
-    step_stopwords(language = "en") %>%
-    step_stopwords(custom_stopword_source = custom_words) %>%
-    step_tokenize(ALL, token = "ngrams", options = ngram_options) %>%
-    step_tokenfilter(ALL, max_tokens = 1e3) %>%
-    step_tfidf(ALL)
-  }
+best_acc_rf_rs <- rf_rs %>%
+  show_best("accuracy")
 
-multi_spec_ngram_wf <- workflow() %>%
-  add_model(multi_spec)
+rf_rs %>%
+  collect_predictions() %>%
+  #filter(id == "Fold01") %>%
+  conf_mat(ulykketype, .pred_class) %>%
+  autoplot(type = "heatmap") +
+  scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1.1,
+      color = "black"
+    ))+
+  ggtitle(label = " Random forest of 1000 trees prediciting accident types without removing \n non-norwegian reports. Best accuracy: .882")
 
-fit_ngram <- function(ngram_options) {
-  fit_resamples(multi_spec_ngram_wf %>% add_recipe(ngram_rec_MTO(ngram_options)),
-                MTO_full_data_folds)
-}
-
-# Seeing the differences between uni-, bi- and trigrams for SVM
-
-set.seed(123)
-unigram_MTO_rs <- fit_ngram(list(n = 1))
-
-set.seed(234)
-bigram_MTO_rs <- fit_ngram(list(n = 2, n_min = 1))
-
-set.seed(345)
-trigram_MTO_rs <- fit_ngram(list(n = 3, n_min = 1))
-
-set.seed(567)
-quadgram_MTO_rs <- fit_ngram(list(n = 3, n_min = 1))
-
-list(
-  `1` = unigram_rs,
-  `1 and 2` = bigram_rs,
-  `1, 2, and 3` = trigram_rs,
-  `1, 2, 3 and 4` = quadgram_rs
-) %>%
-  map_dfr(collect_metrics, .id = "name") %>%
-  filter(.metric == "rmse") %>%
-  ggplot(aes(name, mean, color = name)) +
-  geom_crossbar(aes(ymin = mean - std_err, ymax = mean + std_err), alpha = 0.6) +
-  geom_point(size = 3, alpha = 0.8) +
-  theme_bw() +
-  theme(legend.position = "none") +
-  labs(
-    x = "Degree of n-grams",
-    y = "RMSE",
-    title = "Model performance for different degrees of n-gram tokenization",
-    subtitle = "For the same number of tokens, unigrams performed best"
-  )
-
-
-# Adding predictions to observations:
-
+# That was not useful, a
 
 
 #### Regression model ####
@@ -2760,7 +2728,7 @@ ggplot(coherence_mat, aes(x = k, y = coherence)) +
   theme_bw() +
   #scale_x_continuous(breaks = seq(1, 20, by = 1)) +
   #scale_y_continuous(limits = c(-0.008, 0),
-                     #breaks = seq(-0.008, 0, by = 0.001)) +
+  #breaks = seq(-0.008, 0, by = 0.001)) +
   ylab("Coherence")
 
 # Top 20 terms, describing what this topic is about.
