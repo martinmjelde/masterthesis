@@ -82,6 +82,14 @@ if (!require("naivebayes"))
   install.packages("naivebayes")
 library(naivebayes) # Naive Bayes classifiers
 
+if (!require("textmineR"))
+  install.packages("textmineR")
+library(textmineR) # Naive Bayes classifiers
+
+if (!require("parallel"))
+  install.packages("parallel")
+library(parallel) # Naive Bayes classifiers
+
 ##### Functions #####
 # function to get & plot the most informative terms by a readr::specificed number
 # of topics, using LDA
@@ -2013,7 +2021,22 @@ svm_classification_full_data_rec <-
 
 # Extracting results
 
-svm_fit %>%
+full_data_wf_ulykketype_svm <- workflow() %>%
+  add_recipe(svm_classification_full_data_rec)
+
+full_data_wf_ulykketype_svm
+
+svm_classification_spec <- svm_linear() %>%
+  set_mode("classification") %>%
+  set_engine("LiblineaR")
+
+
+svm_classification_fit <- full_data_wf_ulykketype_svm %>%
+  add_model(svm_classification_spec) %>%
+  fit(data = full_data_train)
+
+
+svm_classification_fit %>%
   extract_fit_parsnip() %>%
   tidy() %>%
   arrange(-estimate)
@@ -2021,7 +2044,7 @@ svm_fit %>%
 # The term Bias here means the same thing as an intercept. We see here what
 # terms contribute to a rescue mission having more injured
 
-svm_fit %>%
+svm_classification_fit %>%
   extract_fit_parsnip() %>%
   tidy() %>%
   arrange(estimate)
@@ -2036,29 +2059,33 @@ full_data_folds
 # Resampling - rs = resample here
 
 set.seed(123)
-svm_rs <- fit_resamples(full_data_wf %>% add_model(svm_spec),
+svm_classification_rs <- fit_resamples(full_data_wf_ulykketype_svm %>% add_model(svm_spec_classification),
                         full_data_folds,
                         control = control_resamples(save_pred = TRUE))
 
-svm_rs
+svm_classification_rs
 
-collect_metrics(svm_rs)
+collect_metrics(svm_classification_rs)
 
-null_regression <- null_model() %>%
+null_classification_svm <- null_model() %>%
   set_engine("parsnip") %>%
   set_mode("classification")
 
-null_rs <- fit_resamples(full_data_wf %>% add_model(null_regression),
+null_classification_rs <- fit_resamples(full_data_wf_ulykketype_svm %>% add_model(null_classification),
                          full_data_folds,
                          metrics = metric_set(rmse))
 
-null_rs
+null_classification_rs
 
 # Remember that this is using unigrams, but it is in fact a little better than
 # the null model
 
-collect_metrics(null_rs)
-collect_metrics(svm_rs)
+collect_metrics(null_classification_rs)
+collect_metrics(svm_classification_rs)
+
+# Now for MTO
+
+
 
 # Compare to random forest
 
@@ -2673,18 +2700,22 @@ original_tf <-
 vocabulary <-
   tf$term[tf$term_freq > 1 & tf$doc_freq < nrow(dtm) / 2]
 
-k_list <- seq(1, 200, by = 1)
-setwd("~/Master/masterthesis")
-
 model_dir <-
   paste0("models_", digest::digest(vocabulary, algo = "sha1"))
 if (!dir.exists(model_dir))
   dir.create(model_dir)
 
+k_list <- seq(1, 200, by = 1)
+setwd("~/Master/masterthesis/models_b6f60a5ca3dbd516b99a26f66ee8276ad1ed2829")
+
 library(parallel)
+tick <- Sys.time()
+
+model_dir <- paste0("models_b6f60a5ca3dbd516b99a26f66ee8276ad1ed2829")
+
 model_list <-
   TmParallelApply(
-    cpus = 16,
+    cpus = 8,
     X = k_list,
     FUN = function(k) {
       filename = file.path(model_dir, paste0(k, "_topics.rda"))
@@ -2710,6 +2741,13 @@ model_list <-
 
 #model tuning
 
+file_names <- as.list(dir(path = model_dir, pattern="*_topics.rda"))
+
+cores <- makeCluster(detectCores()/2)
+
+model_list <- parLapply(file_names, function(x){get(load(x,.GlobalEnv))}, cl = cores)
+
+
 #choosing the best model
 coherence_mat <-
   data.frame(
@@ -2718,13 +2756,13 @@ coherence_mat <-
     coherence = sapply(model_list, function(x)
       mean(x$coherence)),
     stringsAsFactors = FALSE
-  )
+  ) %>%
 
 
 ggplot(coherence_mat, aes(x = k, y = coherence)) +
   geom_point() +
   geom_line(group = 1) +
-  ggtitle("Best topics by coherence score") +
+  ggtitle("Best topics by coherence score, k = 1-181") +
   theme_bw() +
   #scale_x_continuous(breaks = seq(1, 20, by = 1)) +
   #scale_y_continuous(limits = c(-0.008, 0),
@@ -2751,15 +2789,20 @@ allterms <- allterms %>% rename(topic = variable)
 FINAL_allterms <-
   allterms %>% group_by(topic) %>% arrange(desc(value))
 
+tock <- Sys.time()
+
+write_file(x = as.character(tock), file = "done.txt")
+
+time_spent <- tock-tick
 # r^2 for LDA ####
 
 library(textmineR)
 r2 <-
   CalcTopicModelR2(
     dtm = dtm,
-    phi = model_list[[42]]$phi,
-    theta = model_list[[42]]$theta,
-    cpus = 8
+    phi = model_list[[118]]$phi,
+    theta = model_list[[118]]$theta,
+    cpus = 12
   )
 
 # 0.0007624563
