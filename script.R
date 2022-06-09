@@ -815,14 +815,44 @@ require(cld3)
 library(pbapply)
 
 full_data$ALL_cleaned <- removeNumbers(full_data$ALL)
+
 full_data$ALL_cleaned <- removePunctuation(full_data$ALL_cleaned)
-full_data$ALL_cleaned <- str_remove_all(string = full_data$ALL_cleaned, pattern = "Konvertert fra DAMA")
+
+full_data$ALL_cleaned <-
+  str_remove_all(string = full_data$ALL_cleaned, pattern = "Konvertert fra DAMA")
+
 full_data$ALL_cleaned <- str_squish(full_data$ALL_cleaned)
+
+full_data$ALL_cleaned <-
+  str_remove_all(string = full_data$ALL_cleaned, pattern = "Konvertert fra PUS")
+
+all_stop_words <-
+  rbind(
+    tibble(word = tm::stopwords(kind = "no")),
+    tibble(word = tm::stopwords(kind = "en")),
+    tibble(word = custom_words)
+  )
+
+
+# Removing all stopwords from the list of all stopwords and the custom words we
+# added. Using pblapply to add a progress bar to lapply, as it takes a minute
+
+full_data$ALL_cleaned <-
+  str_remove_all(full_data$ALL_cleaned, pattern = paste(all_stop_words$word, collapse = "|"))
+
+# Length of the cleaned version
 
 full_data$length_ALL_cleaned <- str_count(full_data$ALL_cleaned, pattern = boundary("word"))
 
 table(full_data$length_ALL_cleaned)
-mean(full_data$length_ALL_cleaned)
+mean(full_data$length_ALL_cleaned, na.rm = T)
+
+# Length of the uncleaned version
+full_data$length_ALL <- str_count(full_data$ALL, pattern = boundary("word"))
+
+table(full_data$length_ALL)
+mean(full_data$length_ALL, na.rm = T)
+
 
 # Using the automated version:
 
@@ -1273,7 +1303,7 @@ full_data <- full_data %>%
 # full_data$antall_skadet[is.na(full_data$antall_skadet)] <- 0
 
 library(tidymodels)
-set.seed(1234)
+set.seed(12345)
 full_data_split <-   full_data %>%
   mutate(ALL = removeNumbers(ALL)) %>%
   initial_split()
@@ -1287,7 +1317,7 @@ library(textrecipes)
 # For multiple classes for classification, which are rather unbalanced:
 library(themis)
 
-unbalanced_full_data_rec <- recipe(ulykketype ~ ALL, data = full_data_train) %>%
+unbalanced_full_data_rec_ulykketype <- recipe(ulykketype ~ ALL, data = full_data_train) %>%
   step_tokenize(ALL) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
@@ -1320,7 +1350,7 @@ lasso_spec <- logistic_reg(penalty = 0.01, mixture = 1) %>%
 lasso_spec
 
 lasso_wf <- workflow() %>%
-  add_recipe(unbalanced_full_data_rec) %>%
+  add_recipe(unbalanced_full_data_rec_ulykketype) %>%
   add_model(lasso_spec)
 
 lasso_wf
@@ -1328,7 +1358,7 @@ lasso_wf
 # Multiple lasso
 
 multi_lasso_wf <- workflow() %>%
-  add_recipe(unbalanced_full_data_rec, blueprint = sparse_bp) %>%
+  add_recipe(unbalanced_full_data_rec_ulykketype, blueprint = sparse_bp) %>%
   add_model(multi_spec)
 
 multi_lasso_wf
@@ -1339,35 +1369,35 @@ lambda_grid
 smaller_lambda <- grid_regular(penalty(range = c(-5, 0)), levels = 20)
 smaller_lambda
 
-multi_lasso_rs <- tune_grid(
+multi_lasso_rs_ulykketype <- tune_grid(
   multi_lasso_wf,
   unbalanced_vfolds,
   grid = lambda_grid,
   control = control_resamples(save_pred = TRUE)
 )
 
-multi_lasso_rs
+multi_lasso_rs_ulykketype
 
-autoplot(multi_lasso_rs) +
+autoplot(multi_lasso_rs_ulykketype) +
   labs(
     title = "Lasso model performance across regularisation penalties",
     subtitle = "Performance metrics can be used to identity the best penalty"
   )+
   theme_bw()
 
-multi_lasso_rs %>%
+multi_lasso_rs_ulykketype %>%
   show_best("roc_auc")
 
 # What's the best accuracy?
 
-best_acc <- multi_lasso_rs %>%
+best_acc_ulykketype <- multi_lasso_rs_ulykketype %>%
   show_best("accuracy")
 
-best_acc
+best_acc_ulykketype
 
 # Making a confusion matrix
 
-multi_lasso_rs %>%
+multi_lasso_rs_ulykketype %>%
   collect_predictions() %>%
   filter(penalty == best_acc$penalty) %>%
   #filter(id == "Fold01") %>%
@@ -1386,7 +1416,7 @@ multi_lasso_rs %>%
 
 # Removing all the correctly predicted observations:
 
-multi_lasso_rs %>%
+multi_lasso_rs_ulykketype %>%
   collect_predictions() %>%
   filter(penalty == best_acc$penalty) %>%
   # filter(id == "Fold01") %>%
@@ -1406,30 +1436,30 @@ multi_lasso_rs %>%
 
 # Using a smaller lambda
 
-multi_lasso_rs_small <- tune_grid(
+multi_lasso_rs_small_ulykketype <- tune_grid(
   multi_lasso_wf,
   unbalanced_vfolds,
   grid = smaller_lambda,
   control = control_resamples(save_pred = TRUE)
 )
 
-multi_lasso_rs_small
+multi_lasso_rs_small_ulykketype
 
-collect_metrics(multi_lasso_rs_small)
+collect_metrics(multi_lasso_rs_small_ulykketype)
 
-multi_lasso_rs_small %>%
+multi_lasso_rs_small_ulykketype %>%
   show_best("roc_auc")
 
 # What's the best accuracy?
 
-best_acc_small <- multi_lasso_rs_small %>%
+best_acc_small_ulykketype <- multi_lasso_rs_small_ulykketype %>%
   show_best("accuracy")
 
-best_acc_small
+best_acc_small_ulykketype
 
 # Making a confusion matrix
 
-multi_lasso_rs_small %>%
+multi_lasso_rs_small_ulykketype %>%
   collect_predictions() %>%
   filter(penalty == best_acc_small$penalty) %>%
   #filter(id == "Fold01") %>%
@@ -1625,7 +1655,7 @@ table(full_data$MTO_man)
 
 # Splitting and creating a new train/test set
 
-MTO_man_full_data_split <-   full_data %>%
+MTO_man_full_data_split <- full_data %>%
   mutate(ALL = removeNumbers(ALL)) %>%
   initial_split(strata = MTO_man)
 
@@ -1681,6 +1711,9 @@ MTO_man_nb_rs_predictions <- collect_predictions(MTO_man_nb_rs)
 
 MTO_man_nb_rs_metrics
 
+MTO_man_nb_rs %>%
+  show_best("accuracy")
+
 MTO_man_nb_rs_predictions %>%
   #  filter(id == "Fold01") %>% 
   group_by(id) %>% 
@@ -1692,7 +1725,9 @@ MTO_man_nb_rs_predictions %>%
     subtitle = "Each resample fold is shown in a different color"
   )
 
+
 conf_mat_resampled(MTO_man_nb_rs, tidy = FALSE) %>%
+  #filter(.id == "Fold01")
   autoplot(type = "heatmap")
 
 # Did not get very much better results, unfortunately.
@@ -1707,7 +1742,7 @@ MTO_unbalanced_full_data_rec <- recipe(MTO ~ ALL, data = MTO_full_data_train) %>
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
   step_tokenfilter(ALL, max_tokens = 1e3) %>%
-  step_tfidf(ALL) %>% # downsampling 
+  step_tfidf(ALL) %>%  
   step_downsample(MTO)
 
 MTO_unbalanced_vfolds <- vfold_cv(MTO_full_data_train)
@@ -1773,18 +1808,6 @@ best_roc <- multi_lasso_rs %>%
   show_best("roc_auc")
 
 best_roc  
-
-# AUCROC
-
-collect_predictions(multi_lasso_rs)  %>%
-  roc_curve(truth = MTO, .pred_Man) %>%
-  autoplot() +
-  labs(
-    color = NULL,
-    title = "ROC curve for MTO",
-    subtitle = "With final tuned lasso regularized classifier on the test set"
-  )
-
 
 # Making a confusion matrix
 
@@ -1923,22 +1946,6 @@ fitted_lasso %>%
   arrange(estimate)
 
 
-
-# Factors that assume man
-
-library(vip)
-
-set.seed(345)
-MTO_multilasso_imp <- tune_wf %>%
-  add_model(tune_spec2) %>%
-  fit(MTO_full_data_train) %>%
-  pull_workflow_fit() %>%
-  vi(
-    method = "permute", nsim = 10,
-    target = "Man", metric = "auc", reference_class = "Organisation",
-    pred_wrapper = kernlab::predict, train = juice(avatar_prep)
-  )
-
 # Tuning the recipe a little further:
 # Removing words that appear fewer than 10 times, possible typos etc.
 
@@ -1977,24 +1984,36 @@ tune_rs <- tune_grid(
 
 collect_metrics(tune_rs)
 
+tune_rs %>%
+  show_best("accuracy")
+
+tune_rs %>%
+  show_best("sensitivity")
+
+tune_rs %>%
+  show_best("specificity")
+
 autoplot(tune_rs) +
   labs(
     color = "Number of tokens",
-    title = "Model performance across regularization penalties and tokens",
-    subtitle = paste("We can choose a simpler model with higher regularization")
+    title = "Model performance across regularisation penalties and tokens",
+    subtitle = paste("We can choose a simpler model with higher regularisation")
   )+
   theme_bw()
 
 
 choose_acc <- tune_rs %>%
-  select_by_pct_loss(metric = "accuracy", -penalty)
+  select_by_one_std_err(metric = "accuracy", -penalty)
 
 choose_acc
 
 final_wf <- finalize_workflow(sparse_wf_v2, choose_acc)
 final_wf
 
-final_fitted <- last_fit(final_wf, MTO_full_data_split)
+final_fitted <-
+  last_fit(final_wf,
+           MTO_full_data_split,
+           metrics = metric_set(accuracy, sensitivity, specificity, roc_auc))
 
 collect_metrics(final_fitted)
 
@@ -2003,116 +2022,182 @@ collect_metrics(final_fitted)
 final_fitted %>%
   collect_predictions() %>%
   conf_mat(truth = MTO, estimate = .pred_class) %>%
-  autoplot(type = "heatmap")
+  autoplot(type = "heatmap") +
+  ggtitle("Fitting the trained and tuned multiple lasso-model to the test data.
+Accuracy = 0.928, ROCAUC = 0.979")
+ 
+
+final_fitted$splits
+
+final_fitted %>%
+  collect_metrics()
 
 # This is for the testing data, and an accuracy of .903 is pretty good.
 
 
-# SVM Classification:
+##### SVM Classification: #####
+# We're swapping from using parsnip to using e1071
+library(e1071)
 
-svm_classification_full_data_rec <-
-  recipe(ulykketype ~ ALL, data = full_data_train) %>%
-  step_tokenize(ALL) %>%
-  step_stopwords(language = "no") %>%
-  step_stopwords(language = "en") %>%
-  step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tokenfilter(ALL, max_tokens = 1e3) %>%
-  step_tfidf(ALL)
+library(RTextTools)
 
-# Extracting results
+# Creating the DTM:
+tock_2 <- Sys.time()
 
-full_data_wf_ulykketype_svm <- workflow() %>%
-  add_recipe(svm_classification_full_data_rec)
+dtMatrix <-
+  create_matrix(
+    full_data["ALL"],
+    weighting = tm::weightTfIdf,
+    removeNumbers = TRUE,
+    removePunctuation = TRUE,
+    removeStopwords = all_stop_words$word,
+    toLower = TRUE,
+    stripWhitespace = TRUE,
+    ngramLength = c(1:3)
+  )
 
-full_data_wf_ulykketype_svm
+# Configure the training data
+container <-
+  create_container(
+    dtMatrix,
+    as.factor(full_data$ulykketype),
+    trainSize = 1:print(round(nrow(full_data)*0.75)),
+    testSize = print((round(nrow(full_data)*0.75)+1)):nrow(full_data),
+    virgin = FALSE
+  )
 
-svm_classification_spec <- svm_linear() %>%
-  set_mode("classification") %>%
+# train a SVM Model
+
+model <- train_model(container, "SVM", kernel = "linear", cost = 1, verbose = TRUE, cross = 10)
+
+svm_predictions <- predict(model, container@classification_matrix, probability = T)
+
+svm_accuracy <- svm_predictions == container@classification_matrix@ia
+
+model_results <- classify_model(container, model, s = lambda_grid)
+
+tock_2 <- Sys.time()
+tick_tock_2 <- tick_2 - tock_2 
+
+w <- t(model_results$coefs) %*% model_results$SVM_PROB           # weight vectors
+
+summary(w)
+
+w <- apply(w, 2, function(v){sqrt(sum(v^2))})  # weight
+
+w <- sort(w, decreasing = T)
+
+print(w)
+
+tock <- Sys.time()
+tock
+
+# Configure the training data
+MTO_container <-
+  create_container(
+    dtMatrix,
+    as.factor(full_data$MTO),
+    trainSize = 1:print(round(nrow(full_data)*0.75)),
+    testSize = print((round(nrow(full_data)*0.75)+1)):nrow(full_data),
+    virgin = FALSE
+  )
+
+
+MTO_model <- train_model(MTO_container, "SVM", kernel = "linear", cost = 1, verbose = TRUE, cross = 10)
+
+MTO_model_results <- classify_model(MTO_container, model, s = lambda_grid)
+
+tick <- Sys.time()
+tick - tock
+
+# Trying another approach:
+
+text_model_svm_spec <- svm_linear("classification") %>% 
   set_engine("LiblineaR")
 
+# Re-using one of the classification recipes:
 
-svm_classification_fit <- full_data_wf_ulykketype_svm %>%
-  add_model(svm_classification_spec) %>%
-  fit(data = full_data_train)
+unbalanced_full_data_rec_ulykketype
 
+MTO_text_model_svm_wf <- workflow() %>% 
+  add_recipe(MTO_unbalanced_full_data_rec) %>% 
+  add_model(text_model_svm_spec)
 
-svm_classification_fit %>%
-  extract_fit_parsnip() %>%
-  tidy() %>%
-  arrange(-estimate)
-
-# The term Bias here means the same thing as an intercept. We see here what
-# terms contribute to a rescue mission having more injured
-
-svm_classification_fit %>%
-  extract_fit_parsnip() %>%
-  tidy() %>%
-  arrange(estimate)
-
-# Creating folds to validate
-
-set.seed(123)
-full_data_folds <- vfold_cv(full_data_train)
-
-full_data_folds
-
-# Resampling - rs = resample here
-
-set.seed(123)
-svm_classification_rs <- fit_resamples(full_data_wf_ulykketype_svm %>% add_model(svm_spec_classification),
-                        full_data_folds,
-                        control = control_resamples(save_pred = TRUE))
-
-svm_classification_rs
-
-collect_metrics(svm_classification_rs)
-
-null_classification_svm <- null_model() %>%
-  set_engine("parsnip") %>%
-  set_mode("classification")
-
-null_classification_rs <- fit_resamples(full_data_wf_ulykketype_svm %>% add_model(null_classification),
-                         full_data_folds,
-                         metrics = metric_set(rmse))
-
-null_classification_rs
-
-# Remember that this is using unigrams, but it is in fact a little better than
-# the null model
-
-collect_metrics(null_classification_rs)
-collect_metrics(svm_classification_rs)
-
-# Now for MTO
+svm_MTO <- tune::fit_resamples(
+  MTO_text_model_svm_wf,
+  MTO_unbalanced_vfolds,
+  control = control_resamples(save_pred = TRUE)
+)
 
 
+fit_svm_model <- fit(text_model_svm_wf, unbalanced_vfolds)
+
+predictions_SVM <- predict(fit_svm_model, full_data_test)
+
+full_data_test$ulykketype <- as.factor(full_data_test$ulykketype)
+
+bind_cols(full_data_test, predictions_SVM) %>% accuracy(truth = ulykketype, estimate = .pred_class)
+
+roc_SVM <-
+  bind_cols(full_data_test, predictions_SVM) %>% 
+  roc_curve(ulykketype, .pred___label__1) %>% 
+  mutate(Model = "SVM")
+
+roc_SVM %>%
+  ggplot(aes(
+    x = 1 - specificity,
+    y = sensitivity,
+    color = Model
+  )) +
+  geom_path() + geom_abline(lty = 3) +
+  coord_equal() + theme_bw() +
+  ggtitle(
+    "ROC SVM vs Naive bayes",
+    "Receiver Operator curve comparing support vector machine \nand naive bayes without hyperparameter tunning"
+  )
 
 # Compare to random forest
 
 # Changing from 1000 to 100 trees due to the time it took the calculations
 library(ranger)
 
-rf_spec <- rand_forest(trees = 1000) %>%
+rf_classification_spec <- rand_forest(trees = 100) %>%
   set_engine("ranger") %>%
   set_mode("classification")
 
-rf_spec
+rf_classification_spec
 
-rf_rs <- fit_resamples(full_data_wf %>% add_model(rf_spec),
+classification_full_data_rec_mto <-
+  recipe(MTO ~ ALL, data = full_data_train) %>%
+  step_tokenize(ALL) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(language = "en") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
+  step_tokenfilter(ALL, max_tokens = 1e3) %>%
+  step_tfidf(ALL) %>%
+  step_downsample(MTO)
+
+
+
+rf_classification_wf <- workflow() %>%
+  add_recipe(classification_full_data_rec_mto) %>%
+  add_model(rf_classification_spec)
+
+rf_classification_rs <- fit_resamples(rf_classification_wf,
                        full_data_folds,
                        control = control_resamples(save_pred = TRUE))
 
-collect_metrics(rf_rs)
+collect_metrics(rf_classification_rs)
 
 library(performanceEstimation)
 
-best_acc_rf_rs <- rf_rs %>%
+best_acc_rf_rs <- rf_classification_rs %>%
   show_best("accuracy")
 
-rf_rs %>%
+rf_classification_rs %>%
   collect_predictions() %>%
   #filter(id == "Fold01") %>%
-  conf_mat(ulykketype, .pred_class) %>%
+  conf_mat(MTO, .pred_class) %>%
   autoplot(type = "heatmap") +
   scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
   scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
@@ -2124,9 +2209,15 @@ rf_rs %>%
       hjust = 1.1,
       color = "black"
     ))+
-  ggtitle(label = " Random forest of 1000 trees prediciting accident types without removing \n non-norwegian reports. Best accuracy: .882")
+  ggtitle(label = " Random forest of 1000 trees prediciting accident types without removing \n non-norwegian reports. Best accuracy: .904, ROC-AUC: .971")
 
-# That was not useful, a
+rf_classification_rs_pred <- rf_classification_rs %>%
+  collect_predictions()
+
+rf_classification_rs_pred %>%
+  autoplot()
+
+# That was not useful
 
 
 #### Regression model ####
@@ -2147,7 +2238,8 @@ full_data <- full_data %>%
   )) %>%
   mutate(ALL = str_squish(ALL))
 
-# The algorithm can't handle missing values, so we're editing them to 0
+# The algorithm can't handle missing values, if there had been any NA values, 
+# this is how one could edit them to 0
 
 # full_data$antall_skadet[is.na(full_data$antall_skadet)] <- 0
 
@@ -2165,8 +2257,8 @@ library(textrecipes)
 
 # We can add more predictors here, such as
 
-full_data_rec <-
-  recipe(ulykketype ~ ALL, data = full_data_train) %>%
+full_data_regression_rec <-
+  recipe(antall_skadet ~ ALL, data = full_data_train) %>%
   step_tokenize(ALL) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
@@ -2175,32 +2267,32 @@ full_data_rec <-
   step_tfidf(ALL) %>%
   step_normalize(all_predictors())
 
-full_data_rec
+full_data_regression_rec
 
-full_data_prep <- prep(full_data_rec)
+full_data_prep <- prep(full_data_regression_rec)
 full_data_bake <- bake(full_data_prep, new_data = NULL)
 
 dim(full_data_bake)
 
 # Creating a workflow
 
-full_data_wf <- workflow() %>%
+full_data_regression_wf <- workflow() %>%
   add_recipe(full_data_rec)
 
-full_data_wf
+full_data_regression_wf
 
-svm_spec <- svm_linear() %>%
+svm_regression_spec <- svm_linear() %>%
   set_mode("regression") %>%
   set_engine("LiblineaR")
 
 
-svm_fit <- full_data_wf %>%
-  add_model(svm_spec) %>%
+svm_regression_fit <- full_data_regression_wf %>%
+  add_model(svm_regression_spec) %>%
   fit(data = full_data_train)
 
 # Extracting results
 
-svm_fit %>%
+svm_regression_fit %>%
   extract_fit_parsnip() %>%
   tidy() %>%
   arrange(-estimate)
@@ -2208,7 +2300,7 @@ svm_fit %>%
 # The term Bias here means the same thing as an intercept. We see here what
 # terms contribute to a rescue mission having more injured
 
-svm_fit %>%
+svm_regression_fit %>%
   extract_fit_parsnip() %>%
   tidy() %>%
   arrange(estimate)
@@ -2223,15 +2315,15 @@ full_data_folds
 # Resampling - rs = resample here
 
 set.seed(123)
-svm_rs <- fit_resamples(full_data_wf %>% add_model(svm_spec),
+svm_regression_rs <- fit_resamples(full_data_regression_wf %>% add_model(svm_regression_spec),
                         full_data_folds,
                         control = control_resamples(save_pred = TRUE))
 
-svm_rs
+svm_regression_rs
 
-collect_metrics(svm_rs)
+collect_metrics(svm_regression_rs)
 
-svm_rs %>%
+svm_regression_rs %>%
   collect_predictions() %>%
   ggplot(aes(antall_skadet, .pred, color = id)) +
   geom_abline(lty = 2, color = "gray80", size = 1.5) +
@@ -2248,7 +2340,7 @@ svm_rs %>%
 
 # Removing the outlier #10
 
-svm_rs %>%
+svm_regression_rs %>%
   collect_predictions() %>%
   ggplot(aes(antall_skadet, .pred, color = id)) +
   geom_abline(lty = 2, color = "gray80", size = 1.5) +
@@ -2271,7 +2363,7 @@ null_regression <- null_model() %>%
   set_engine("parsnip") %>%
   set_mode("regression")
 
-null_rs <- fit_resamples(full_data_wf %>% add_model(null_regression),
+null_rs <- fit_resamples(full_data_regression_wf %>% add_model(null_regression),
                          full_data_folds,
                          metrics = metric_set(rmse))
 
@@ -2281,7 +2373,7 @@ null_rs
 # the null model
 
 collect_metrics(null_rs)
-collect_metrics(svm_rs)
+collect_metrics(svm_regression_rs)
 
 
 # Compare to random forest
@@ -2289,20 +2381,20 @@ collect_metrics(svm_rs)
 # Changing from 1000 to 100 trees due to the time it took the calculations
 library(ranger)
 
-rf_spec <- rand_forest(trees = 100) %>%
+rf_regression_spec <- rand_forest(trees = 1000) %>%
   set_engine("ranger") %>%
   set_mode("regression")
 
-rf_spec
+rf_regression_spec
 
-rf_rs <- fit_resamples(full_data_wf %>% add_model(rf_spec),
+rf_regression_rs <- fit_resamples(full_data_regression_wf %>% add_model(rf_regression_spec),
                        full_data_folds,
                        control = control_resamples(save_pred = TRUE))
 
-collect_metrics(rf_rs)
+collect_metrics(rf_regression_rs, summarize = F)
 
 
-collect_predictions(rf_rs) %>%
+collect_predictions(rf_regression_rs) %>%
   ggplot(aes(antall_skadet, .pred, color = id)) +
   geom_abline(lty = 2, color = "gray80", size = 1.5) +
   geom_point(alpha = 0.3) +
@@ -2328,8 +2420,8 @@ ngram_rec <- function(ngram_options) {
     step_normalize(all_predictors())
 }
 
-svm_wf <- workflow() %>%
-  add_model(svm_spec)
+svm_regression_wf <- workflow() %>%
+  add_model(svm_regression_spec)
 
 fit_ngram <- function(ngram_options) {
   fit_resamples(svm_wf %>% add_recipe(ngram_rec(ngram_options)),
@@ -2372,7 +2464,7 @@ list(
 
 # Comparing mean absolute % error for each resample
 
-svm_rs %>%
+svm_regression_rs %>%
   collect_predictions() %>%
   group_by(id) %>%
   mae(antall_skadet, .pred)
@@ -2380,16 +2472,18 @@ svm_rs %>%
 
 # Tuning the model and changing the number of tokens we use
 
-final_rec <- recipe(antall_skadet ~ ALL, data = full_data_train) %>%
+final_regression_rec <- 
+  recipe(antall_skadet ~ ALL, data = full_data_train) %>%
   step_tokenize(ALL, token = "ngrams", options = list(n = 2, n_min = 1)) %>%
-  step_tokenfilter(ALL, max_tokens = tune()) %>%
+  step_tokenfilter(ALL, max_tokens = tune::tune()) %>%
   step_stopwords(language = "no") %>%
-  step_stopwords(custom_stopword_source = custom_words) %>%
   step_stopwords(language = "en") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
   step_tfidf(ALL) %>%
   step_normalize(all_predictors())
 
-final_rec
+
+final_regression_rec
 
 svm_spec <- svm_linear() %>%
   set_mode("regression") %>%
@@ -2397,66 +2491,68 @@ svm_spec <- svm_linear() %>%
 
 svm_spec
 
-tune_wf <- workflow() %>%
-  add_recipe(final_rec) %>%
+tune_regression_wf <- workflow() %>%
+  add_recipe(final_regression_rec) %>%
   add_model(svm_spec)
 
 tune_wf
 
-final_grid <- grid_regular(max_tokens(range = c(1e3, 1e4)),
+final_grid <- grid_regular(max_tokens(range = c(1e3, 10e3)),
                            levels = 10)
 
 final_grid
 
-final_rs <- tune_grid(
-  tune_wf,
+final_regression_rs <- tune_grid(
+  tune_regression_wf,
   full_data_folds,
   grid = final_grid,
-  metrics = metric_set(rmse, mae),
+  metrics = metric_set(rmse, mae, rsq_trad, rsq),
   control = control_resamples(save_pred = TRUE)
 )
 
-final_rs
+final_regression_rs
 
 # Grapichally represent differences
-final_rs %>%
+final_regression_rs %>%
   collect_metrics() %>%
   ggplot(aes(max_tokens, mean, color = .metric)) +
   geom_line(size = 1.5, alpha = 0.5) +
   geom_point(size = 2, alpha = 0.9) +
   facet_wrap( ~ .metric, scales = "free_y", ncol = 1) +
   theme_bw()+
-  scale_x_continuous(breaks = seq(0, 10000, by = 2000))+
+  scale_x_continuous(breaks = seq(0, 10000, by = 1000))+
   theme(legend.position = "none") +
   labs(x = "Number of tokens",
        title = "Linear SVM performance across number of tokens",
-       subtitle = "Performance decreases as more tokens are included")
+       subtitle = "Performance decreases in all measures as more tokens are included")
 
-chosen_mae <- final_rs %>%
+chosen_mae <- final_regression_rs %>%
   select_by_pct_loss(metric = "mae", max_tokens, limit = 3)
+
+# check std error
 
 chosen_mae
 
-final_wf <- finalize_workflow(tune_wf, chosen_mae)
+final_regression_wf <- finalize_workflow(tune_regression_wf, chosen_mae)
 
 final_wf
 
 # Evaluating it on real data
 
-final_fitted <- last_fit(final_wf, full_data_split)
+final_regression_fitted <- last_fit(final_regression_wf, full_data_split)
 
-collect_metrics(final_fitted)
+collect_metrics(final_regression_fitted)
 
-full_data_fit <- pull_workflow_fit(final_fitted$.workflow[[1]])
+full_data_regression_fit <- pull_workflow_fit(final_regression_fitted$.workflow[[1]])
 
-full_data_fit %>%
+full_data_regression_fit %>%
   tidy() %>%
   filter(term != "Bias") %>%
-  #filter(term != "fartøyets") %>%
+  #filter(term != "for") %>%
   mutate(
     sign = case_when(
-      estimate > 0 ~ "More (than mean injured)",
-      TRUE ~ "Less (than mean injured)"
+      estimate > 0 ~ "More (than 1 injured)",
+      TRUE ~ "Fewer (than or equal to 1 injured)"
     ),
     estimate = abs(estimate),
     term = str_remove_all(term, "tfidf_ALL_")
@@ -2503,17 +2599,158 @@ final_fitted %>%
   #scale_x_continuous(breaks = seq(0, 22, by = 1)) +
   theme_bw()
 
-full_data_bind <- collect_predictions(final_fitted) %>%
-  bind_cols(full_data_test %>% select(-antall_skadet)) %>%
+full_data_bind <- collect_predictions(final_regression_fitted) %>%
+  bind_cols(full_data %>% select(-antall_skadet)) %>%
   filter(abs(antall_skadet - .pred) > 1)
 
 full_data_bind %>%
   arrange(-antall_skadet) %>%
   select(antall_skadet, .pred, ALL)
 
+#### Deceased regression #####
+# Trying it out with deceased rather than injured and adding some predictor
+# variables
+
+# Tuning the model and changing the number of tokens we use
+
+final_deceased_regression_rec <- recipe(antall_omkommet ~ ALL + ulykketype, data = full_data_train) %>%
+  step_tokenize(ALL, token = "ngrams", options = list(n = 2, n_min = 1)) %>%
+  step_tokenfilter(ALL, max_tokens = tune()) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
+  step_stopwords(language = "en") %>%
+  step_tfidf(ALL) %>%
+  step_normalize(all_predictors())
+
+final_deceased_regression_rec
+
+svm_spec <- svm_linear() %>%
+  set_mode("regression") %>%
+  set_engine("LiblineaR")
+
+svm_spec
+
+tune_deceased_regression_wf <- workflow() %>%
+  add_recipe(final_deceased_regression_rec) %>%
+  add_model(svm_spec)
+
+tune_deceased_regression_wf
+
+final_grid <- grid_regular(max_tokens(range = c(1e3, 1e10)),
+                           levels = 10)
+
+final_grid
+
+final_deceased_regression_rs <- tune_grid(
+  tune_deceased_regression_wf,
+  full_data_folds,
+  grid = final_grid,
+  metrics = metric_set(rmse, mae),
+  control = control_resamples(save_pred = TRUE)
+)
+
+final_decased_regression_rs
+
+# Grapichally represent differences
+final_deceased_regression_rs %>%
+  collect_metrics() %>%
+  ggplot(aes(max_tokens, mean, color = .metric)) +
+  geom_line(size = 1.5, alpha = 0.5) +
+  geom_point(size = 2, alpha = 0.9) +
+  facet_wrap( ~ .metric, scales = "free_y", ncol = 1) +
+  theme_bw()+
+  scale_x_continuous(breaks = seq(0, 10000, by = 2000))+
+  theme(legend.position = "none") +
+  labs(x = "Number of tokens",
+       title = "Linear SVM performance across number of tokens",
+       subtitle = "Performance decreases (????) as more tokens are included")
+
+chosen_deceased_mae <- final_deceased_regression_rs %>%
+  select_by_pct_loss(metric = "mae", max_tokens, limit = 3)
+
+# check std error
+
+chosen_deceased__mae
+
+final_deceased_regression_wf <- finalize_workflow(tune_deceased_regression_wf, chosen_deceased_mae)
+
+final_deceased_regression_wf
+
+# Evaluating it on real data
+
+final_deceased_regression_fitted <- last_fit(final_deceased_regression_wf, full_data_split)
+
+collect_metrics(final_deceased_regression_fitted)
+
+full_data_deceased_fit <- pull_workflow_fit(final_deceased_regression_fitted$.workflow[[1]])
+
+full_data_deceased_fit %>%
+  tidy() %>%
+  filter(term != "Bias") %>%
+  #filter(term != "fartøyets") %>%
+  mutate(
+    sign = case_when(
+      estimate > 0 ~ "More (than mean deceased)",
+      TRUE ~ "Less (than mean deceased)"
+    ),
+    estimate = abs(estimate),
+    term = str_remove_all(term, "tfidf_ALL_")
+  ) %>%
+  group_by(sign) %>%
+  top_n(20, estimate) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = estimate,
+    y = fct_reorder(term, estimate),
+    fill = sign
+  )) +
+  geom_col(show.legend = FALSE) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap( ~ sign, scales = "free") +
+  labs(
+    y = NULL,
+    title = paste(
+      "Variable importance for predicting amount of",
+      "injured people in accident reports"
+    ),
+    subtitle = paste(
+      "These features are the most importance",
+      "in predicting the amount of injured"
+    )
+  ) +
+  theme_bw() +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+
+full_data_deceased_fit %>%
+  collect_predictions() %>%
+  ggplot(aes(antall_skadet, .pred)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_point(alpha = 0.3) +
+  labs(
+    x = "Actual",
+    y = "Predicted amount of injured people",
+    title = paste(
+      "Predicted and actual amount of injured for the testing set of",
+      "accident reports"
+    ),
+    subtitle = "For the testing set, predictions are most accurate between 0-5 injured"
+  ) +
+  #scale_x_continuous(breaks = seq(0, 22, by = 1)) +
+  theme_bw()
+
+full_data_deceased_bind <- collect_predictions(final_deceased_regression_fitted) %>%
+  bind_cols(full_data %>% select(-antall_omkommet)) %>%
+  filter(abs(antall_omkommet - .pred) > 1)
+
+full_data_deceased_bind %>%
+  arrange(-antall_omkommet) %>%
+  select(antall_omkommet, .pred, ALL)
+
+
+
 #### LDA modeling ####
 #### Ãrsak ####
-
+library(tm)
 
 # We create a term matrix we can clean up
 full_data_Corpus <-
@@ -2537,10 +2774,10 @@ full_data_DTM_tidy_cleaned <-
   anti_join(norwegian_stop_words, by = c("term" = "word")) %>% # remove Norwegian stopwords and custom words
   anti_join(stop_words, by = c("term" = "word")) %>% # remove English stopwords as well
   removeNumbers() %>%
-  removePuntuation()
+  removePunctuation()
 
 # reconstruct cleaned documents (so that each word shows up the correct number of times)
-cleaned_documents <-          full_data_DTM_tidy_cleaned %>%
+cleaned_documents <-  full_data_DTM_tidy_cleaned %>%
   group_by(document) %>%
   mutate(terms = toString(rep(term, count))) %>%
   select(document, terms) %>%
