@@ -2103,7 +2103,7 @@ MTO_container <-
   )
 
 
-MTO_model <- train_model(MTO_container, "SVM", kernel = "linear", cost = 1, verbose = TRUE, cross = 10)
+MTO_model <- train_model(MTO_container, "SVM", kernel = "linear", cost = 1, verbose = TRUE)
 
 MTO_model_results <- classify_model(MTO_container, model, s = lambda_grid)
 
@@ -2125,8 +2125,7 @@ MTO_text_model_svm_wf <- workflow() %>%
 
 svm_MTO <- tune::fit_resamples(
   MTO_text_model_svm_wf,
-  MTO_unbalanced_vfolds,
-  control = control_resamples(save_pred = TRUE)
+  MTO_unbalanced_vfolds
 )
 
 
