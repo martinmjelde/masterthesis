@@ -527,7 +527,7 @@ full_data %>%
       angle = 60,
       size = 10,
       vjust = 1,
-      hjust = 1,
+      hjust = 1.1,
       color = "black"
     ),
     axis.text.y = element_text(size = 10),
@@ -618,7 +618,7 @@ ggplot(full_data,
       angle = 60,
       size = 10,
       vjust = 1,
-      hjust = 1,
+      hjust = 1.1,
       color = "black"
     ),
     axis.text.y = element_text(size = 10),
@@ -659,7 +659,7 @@ full_data %>%
       angle = 60,
       size = 10,
       vjust = 1,
-      hjust = 1,
+      hjust = 1.1,
       color = "black"
     ),
     axis.text.y = element_text(size = 10),
@@ -693,7 +693,7 @@ full_data %>%
       angle = 60,
       size = 10,
       vjust = 1,
-      hjust = 1,
+      hjust = 1.1,
       color = "black"
     ),
     axis.text.y = element_text(size = 10),
@@ -720,7 +720,7 @@ full_data %>%
       angle = 60,
       size = 10,
       vjust = 1,
-      hjust = 1,
+      hjust = 1.1,
       color = "black"
     ),
     axis.text.y = element_text(size = 10),
@@ -736,33 +736,239 @@ full_data %>%
   geom_text(aes(label = n), nudge_y = 500) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
-# Also done with "ulykke"
+# Visualising accident types
 
-# A bit of cleaning, removing punctuation etc.
+full_data %>%
+  count(ulykketype) %>%
+  ggplot(aes(ulykketype, n, label = ulykketype)) +
+  geom_col() +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1.1,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title.x = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  labs(x = "Accident types (in Norwegian)",
+       y = "Count",
+       title = "Distribution of accident types from each report") +
+  geom_text(aes(label = n), nudge_y = 650) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
 
-# This creates too big of a file, so I'll have to postpone doing the full data
-# set, splitting it up
+full_data %>%
+  count(ulykketype) %>%
+  ggplot(aes(ulykketype, n, label = ulykketype)) +
+  geom_col() +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1.1,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title.x = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  labs(x = "Accident types (in Norwegian)",
+       y = "Count",
+       title = "Distribution of accident types from each report") +
+  geom_text(aes(label = n), nudge_y = 650) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
 
-# Should be fine, but keeping around for posterity
-# full_data1 <- full_data1 %>%
-#   filter(!is.na(ALL)) %>%
-#   select(ALL, antall_skadet, antall_omkommet) %>%
-#   mutate(ALL = str_replace_all(
-#     string = ALL,
-#     pattern =  "\n",
-#     replacement = ""
-#   )) %>%
-#   transmute(ALL = str_squish(
-#     removePunctuation(
-#       ALL,
-#       preserve_intra_word_contractions = T,
-#       preserve_intra_word_dashes = T
-#     )
-#   )) %>%
-#   select(ALL_cleaned2, antall_skadet, antall_omkommet) %>%
-#   rename(c("ALL" = "ALL_cleaned2"))
+# Faceting accident type over years
+
+full_data$years <- years(full_data$ulykkedato2)
+
+full_data$years <- as.numeric(as.character(full_data$years))
+
+table(full_data$years)
+
+table(full_data$ulykketype)
+
+p <- ggplot(data = full_data, aes(years)) +
+  geom_histogram(stat = "count", binwidth = "unscaled x") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(
+      size = 8,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
+  scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
+  guides(x = guide_axis(angle = 50))+ #, x.sec = guide_axis(angle = 50))+
+  labs(
+    x = "Year",
+    y = "Number of entries per year",
+    title = paste0("Reported accidents in Sdir's dataset, by accident type. N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+p
+
+# Adding a margin or a total plot.
+
+df <- rbind(full_data, transform(full_data, ulykketype = "All combined"))
+
+# The package "lemon" let's us add x-ticks to the plot with the command below,
+# facet_rep_wrap.
+
+library(lemon)
+
+p %+% df + facet_rep_wrap(.~ ulykketype, ncol = 3, scales = "free_y", repeat.tick.labels = "bottom")
+
+p2 <- ggplot(data = full_data, aes(ulykkesmåned)) +
+  geom_histogram(stat = "count", binwidth = "unscaled x") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(
+      size = 8,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
+  #scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
+  guides(x = guide_axis(angle = 50))+ #, x.sec = guide_axis(angle = 50))+
+  labs(
+    x = "Year",
+    y = "Number of entries per year",
+    title = paste0("Reported accidents in Sdir's dataset, by accident type. N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+p2
+
+# Adding a margin or a total plot.
+
+df <- rbind(full_data, transform(full_data, ulykketype = "All combined"))
+
+# The package "lemon" let's us add x-ticks to the plot with the command below,
+# facet_rep_wrap.
+
+library(lemon)
+
+p2 %+% df + facet_rep_wrap(.~ ulykketype, ncol = 3, scales = "free_y", repeat.tick.labels = "bottom")
 
 
+# A sneak peak at the MTO variable:
+
+
+# Creating a new variable
+full_data$MTO <- NA
+
+# Man
+
+full_data$MTO[full_data$ulykketype == "Arbeidsulykke/Personulykke"] <- "Man"
+full_data$MTO[full_data$ulykketype == "Annen ulykke"] <- "Man"
+
+# Technology
+
+full_data$MTO[full_data$ulykketype == "Maskinhavari"] <- "Technology"
+full_data$MTO[full_data$ulykketype == "Brann/Eksplosjon"] <- "Technology"
+full_data$MTO[full_data$ulykketype == "Kantring"] <- "Technology"
+full_data$MTO[full_data$ulykketype == "Kollisjon"] <- "Technology"
+full_data$MTO[full_data$ulykketype == "Lekkasje"] <- "Technology"
+full_data$MTO[full_data$ulykketype == "Stabilitetssvikt uten kantring"] <- "Technology"
+
+# Organisation
+
+full_data$MTO[full_data$ulykketype == "Feil på redningsmidler"] <- "Organisation"
+full_data$MTO[full_data$ulykketype == "Hardtværskade"] <- "Organisation"
+full_data$MTO[full_data$ulykketype == "Kontaktskade, Kaier, Broer etc"] <- "Organisation"
+full_data$MTO[full_data$ulykketype == "Miljøskade/Forurensing"] <- "Organisation"
+full_data$MTO[full_data$ulykketype == "Grunnstøting"] <- "Organisation"
+full_data$MTO[full_data$ulykketype == "Fartøyet er savnet, forsvunnet"] <- "Organisation"
+
+
+full_data$MTO <- as.factor(as.character(full_data$MTO))
+
+
+p3 <- ggplot(data = full_data, aes(years)) +
+  geom_histogram(stat = "count", binwidth = "unscaled x") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(
+      size = 8,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
+  scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
+  guides(x = guide_axis(angle = 50))+ #, x.sec = guide_axis(angle = 50))+
+  labs(
+    x = "Year",
+    y = "Number of entries per year",
+    title = paste0("Reported accidents in Sdir's dataset, by accident type (MTO). N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+p3
+
+# Adding a margin or a total plot.
+
+df2 <- rbind(full_data, transform(full_data, MTO = "All combined"))
+
+p3 %+% df2 + facet_rep_wrap(.~ MTO, ncol = 2, scales = "free_y", repeat.tick.labels = "bottom")
+
+p4 <- ggplot(data = full_data, aes(ulykkesmåned)) +
+  geom_histogram(stat = "count", binwidth = "unscaled x") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(
+      size = 8,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
+  #scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
+  guides(x = guide_axis(angle = 50))+ #, x.sec = guide_axis(angle = 50))+
+  labs(
+    x = "Year",
+    y = "Number of entries per year",
+    title = paste0("Reported accidents in Sdir's dataset, by accident type (MTO). N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+p4
+
+# Adding a margin or a total plot.
+
+df2 <- rbind(full_data, transform(full_data, MTO = "All combined"))
+
+p4 %+% df2 + facet_rep_wrap(.~ MTO, ncol = 2, scales = "free_y", repeat.tick.labels = "bottom")
+
+# Removing objects no longer in use:
+
+rm(df)
+rm(p)
+rm(p2)
+rm(p3)
+rm(p4)
 
 #### Stemming/stopwords or not? ####
 
@@ -780,33 +986,27 @@ full_data %>%
 
 # Removing custom words
 
-custom_words <-
+language_identification_words <-
   c(
     "pus",
-    "ca",
-    "på",
     "g09",
     "g11",
-    "kl",
-    "fritekster",
-    "konvertert",
-    "fikk",
-    "ulykkesbeskrivelse",
     "m",
-    "skadebeskrivelse",
     "077",
     "106",
     "na",
     "dama",
     NA,
-    "NA"
+    "NA",
+    "konvertert",
+    "fra"
   )
 
 full_data %>%
   unnest_tokens(word, ALL) %>%
   anti_join(get_stopwords("no")) %>%
   anti_join(get_stopwords("en")) %>%
-  filter(!word %in% custom_words) %>%
+  filter(!word %in% language_identification_words) %>%
   count(word, sort = TRUE)
 
 #### Trying to detect languages ####
@@ -814,17 +1014,8 @@ full_data %>%
 require(cld3)
 library(pbapply)
 
-full_data$ALL_cleaned <- removeNumbers(full_data$ALL)
-
-full_data$ALL_cleaned <- removePunctuation(full_data$ALL_cleaned)
-
-full_data$ALL_cleaned <-
-  str_remove_all(string = full_data$ALL_cleaned, pattern = "Konvertert fra DAMA")
-
-full_data$ALL_cleaned <- str_squish(full_data$ALL_cleaned)
-
-full_data$ALL_cleaned <-
-  str_remove_all(string = full_data$ALL_cleaned, pattern = "Konvertert fra PUS")
+# We should not remove all stopwords before identifying languages, as they might
+# indicate a language.
 
 all_stop_words <-
   rbind(
@@ -833,12 +1024,31 @@ all_stop_words <-
     tibble(word = custom_words)
   )
 
+language_identification_words <- paste(language_identification_words, collapse = "|")
 
 # Removing all stopwords from the list of all stopwords and the custom words we
 # added. Using pblapply to add a progress bar to lapply, as it takes a minute
 
+full_data$ALL_cleaned <- tolower(as.character(full_data$ALL))
+
+full_data$ALL_cleaned <- pblapply(full_data$ALL_cleaned, tm::removeWords, language_identification_words)
+
+full_data$ALL_cleaned <- unlist(full_data$ALL_cleaned)
+
+full_data$ALL_cleaned <- removeNumbers(full_data$ALL_cleaned)
+
+full_data$ALL_cleaned <- removePunctuation(full_data$ALL_cleaned)
+
 full_data$ALL_cleaned <-
-  str_remove_all(full_data$ALL_cleaned, pattern = paste(all_stop_words$word, collapse = "|"))
+  str_remove_all(string = full_data$ALL_cleaned, pattern = "konvertert fra")
+
+full_data$ALL_cleaned <- str_squish(full_data$ALL_cleaned)
+
+full_data$ALL_cleaned <- trimws(full_data$ALL_cleaned)
+
+# Inspecting to check if done correctly
+
+head(full_data$ALL_cleaned)
 
 # Length of the cleaned version
 
@@ -860,14 +1070,20 @@ full_data$languages <- cld3::detect_language(full_data$ALL_cleaned)
 
 # Investigating and cleaning:
 
+table(full_data$languages, useNA = "always")
+
+# A lot of languages are "bs" or 
+
 head(full_data$ALL_cleaned[full_data$languages == "bs"])
 
 full_data$languages <- as.character(full_data$languages)
 
-table(full_data$languages[full_data$ALL_cleaned == "Overflateslagskade"])
+table(full_data$languages[full_data$ALL_cleaned == "overflateslagskade"])
+
 # All of the instances where "Overflateslagskade" is the only word is incorrectly
 # labeled as "bs", rather than "no".
-full_data$languages[full_data$ALL_cleaned == "Overflateslagskade"] <- "no"
+
+full_data$languages[full_data$ALL_cleaned == "overflateslagskade"] <- "no"
 
 table(full_data$languages)
 
@@ -876,27 +1092,35 @@ table(head(full_data$ALL_cleaned[full_data$languages == "da"], 100))
 # Is it perhaps one of the people writing the reports?
 table(full_data$registrert_av.x[full_data$languages == "da"])
 
+# Several operators have written these reports
+
+table(years(full_data$ulykkedato2)[full_data$languages == "da"])
+
+# Over several years
+
 # These reports are a mix of norwegian and english
 
 full_data$languages[
   isTRUE(
     grepl(
-      full_data$ALL_cleaned,
+      full_data$ALL,
       pattern = "Indre skader Overflateslagskade"))] <- "no"
 
 full_data$languages[
   isTRUE(
     grepl(
-      full_data$ALL_cleaned,
+      full_data$ALL,
       pattern = "Indre skader"))] <- "no"
 
 table(full_data$ALL_cleaned[full_data$languages == "de"])
+
+# These reports in german are actually norwegian
 
 full_data$languages[full_data$languages == "de"] <- "no"
 
 head(full_data$ALL_cleaned[full_data$languages == "sv"], 100)
 
-full_data$languages[full_data$ALL_cleaned == "Forbrenning"] <- "no"
+full_data$languages[full_data$ALL_cleaned == "forbrenning"] <- "no"
 
 table(full_data$ALL_cleaned[full_data$languages == "sv"])
 
@@ -908,6 +1132,34 @@ table(full_data$ALL_cleaned[full_data$languages == "sv" & full_data$length_ALL_c
 
 head(full_data$ALL_cleaned[full_data$languages == "en"])
 
+# Some of these are just NA, why is that? Let's see how many of the reports are 
+# simply one word
+
+table(full_data$ALL_cleaned[full_data$length_ALL_cleaned == 1], 
+      useNA = "always")
+
+# This seems very odd. Let's look at one of the smaller, but important 
+# categories - drowning
+
+full_data$ALL[full_data$ALL_cleaned == "drukning"]
+
+table(full_data$antall_skadet[full_data$ALL_cleaned == "drukning"])
+
+table(full_data$antall_omkommet[full_data$ALL_cleaned == "drukning"])
+
+# These reports are seemingly all from the database PUS. Was that an old system?
+
+table(years(full_data$ulykkedato2)[full_data$ALL_cleaned == "drukning"])
+
+# Let's look at who made the registered entry
+
+table(years(full_data$ulykkedato2)[full_data$registrert_av.x == "Konvertering"])
+
+
+# A quick look at the accident types as well
+
+table(full_data$ulykketype[full_data$registrert_av.x == "Konvertering"])
+
 # Still not very promising results... Let's look at another method with a pre-
 # trained model
 ##### fastText ######
@@ -916,27 +1168,27 @@ library(fastText)
 
 file_path <- file.path("lid.176.bin")
 
-full_data$language <- fastText::language_identification(input_obj = full_data$ALL_cleaned,
+full_data$language_fasttext <- fastText::language_identification(input_obj = full_data$ALL_cleaned,
                                                         pre_trained_language_model_path = file_path,
                                                         k = 1,
                                                         th = 0.0,
                                                         threads = 1,
                                                         verbose = TRUE)
 
-full_data$language_detected <- paste0(full_data$language$iso_lang_1)
-full_data$language_probability <- paste0(full_data$language$prob_1)
+full_data$language_detected_fasttext <- paste0(full_data$language_fasttext$iso_lang_1)
+full_data$language_probability_fasttext <- paste0(full_data$language_fasttext$prob_1)
 
-table(full_data$language_detected)
+table(full_data$language_detected_fasttext)
 
-head(full_data$ALL_cleaned[full_data$language_detected == "da"], 100)
+head(full_data$ALL_cleaned[full_data$language_detected_fasttext == "da"], 100)
 
 # The word "fremmedlegeme" is wrongfully assumed to be danish
-sum(table(full_data$ALL_cleaned[full_data$ALL_cleaned == "Fremmedlegeme"]))
+sum(table(full_data$ALL_cleaned[full_data$ALL_cleaned == "fremmedlegeme"]))
 
 # 1115 of the free text fields are just the word fremmedlegeme.
 
-table(full_data$antall_skadet[full_data$ALL_cleaned == "Fremmedlegeme"])
-table(full_data$ulykketype[full_data$ALL_cleaned == "Fremmedlegeme"])
+table(full_data$antall_skadet[full_data$ALL_cleaned == "fremmedlegeme"])
+table(full_data$ulykketype[full_data$ALL_cleaned == "fremmedlegeme"])
 
 # And all of the cases are work accidents with only 1 injured person
 # This does not seem like a good solution, let's go back to the drawing board.
@@ -1275,8 +1527,11 @@ table(full_data$length_ALL_cleaned[full_data$languages_combined_count == 0])
 
 full_data <- full_data[!duplicated(full_data$ALL), ]
 
-tail(full_data$ALL_cleaned[full_data$languages_combined_count == 0])
+tail(full_data$ALL[full_data$languages_combined_count == 0])
 
+table(full_data$languages_combined_count)
+
+table(full_data$languages_combined_count2)
 
 full_data <- full_data[full_data$languages_combined_count != 0, ]
 
@@ -1313,25 +1568,51 @@ full_data_test <- testing(full_data_split)
 
 library(textrecipes)
 
-
 # For multiple classes for classification, which are rather unbalanced:
 library(themis)
 
-unbalanced_full_data_rec_ulykketype <- recipe(ulykketype ~ ALL, data = full_data_train) %>%
-  step_tokenize(ALL) %>%
+# custom stopwords to remove, in addition to the ones already used in language
+# identification:
+
+custom_words <-
+  c(
+    "pus",
+    "ca",
+    "på",
+    "g09",
+    "g11",
+    "kl",
+    "fritekster",
+    "konvertert",
+    "fikk",
+    "ulykkesbeskrivelse",
+    "m",
+    "skadebeskrivelse",
+    "077",
+    "106",
+    "na",
+    "dama",
+    NA,
+    "NA"
+  )
+
+
+unbalanced_full_data_rec_ulykketype <- recipe(ulykketype ~ ALL_cleaned, data = full_data_train) %>%
+  step_tokenize(ALL_cleaned) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tokenfilter(ALL, max_tokens = 1e4) %>%
-  step_tfidf(ALL) %>%
+  step_tokenfilter(ALL_cleaned, max_tokens = 1e4) %>%
+  step_tfidf(ALL_cleaned) %>%
   step_downsample(ulykketype)
+
+unbalanced_full_data_rec_ulykketype
 
 unbalanced_vfolds <- vfold_cv(full_data_train)
 
 multi_spec <- multinom_reg(penalty = tune(), mixture = 1) %>%
   set_mode("classification") %>%
   set_engine("glmnet")
-
 
 multi_spec
 
@@ -1385,6 +1666,8 @@ autoplot(multi_lasso_rs_ulykketype) +
   )+
   theme_bw()
 
+# Best ROC-AUC
+
 multi_lasso_rs_ulykketype %>%
   show_best("roc_auc")
 
@@ -1399,7 +1682,7 @@ best_acc_ulykketype
 
 multi_lasso_rs_ulykketype %>%
   collect_predictions() %>%
-  filter(penalty == best_acc$penalty) %>%
+  filter(penalty == best_acc_ulykketype$penalty) %>%
   #filter(id == "Fold01") %>%
   conf_mat(ulykketype, .pred_class) %>%
   autoplot(type = "heatmap") +
@@ -2056,6 +2339,8 @@ dtMatrix <-
     ngramLength = c(1:3)
   )
 
+as.matrix(dtMatrix)
+
 # Configure the training data
 container <-
   create_container(
@@ -2072,13 +2357,15 @@ model <- train_model(container, "SVM", kernel = "linear", cost = 1, verbose = TR
 
 svm_predictions <- predict(model, container@classification_matrix, probability = T)
 
-svm_accuracy <- svm_predictions == container@classification_matrix@ia
+svm_accuracy <- svm_predictions == full_data$ulykketype[1:print(round(nrow(full_data)*0.75))]
+table(svm_accuracy)
 
 model_results <- classify_model(container, model, s = lambda_grid)
 
 tock_2 <- Sys.time()
 tick_tock_2 <- tick_2 - tock_2 
 
+# Have to weight the training, not the prediction
 w <- t(model_results$coefs) %*% model_results$SVM_PROB           # weight vectors
 
 summary(w)
@@ -2091,6 +2378,30 @@ print(w)
 
 tock <- Sys.time()
 tock
+
+# class 1 vs. 14
+# class 1 has n[1] SV, class 14 has n[14]
+# rows of n[1], column 2 = [1vs2, 1vs3*]
+# rows of n[3], column 1 = [3vs1*, 3vs2]
+coef1 = c(model$coefs[1:n[1],2],model$coefs[(sum(n[1:2])+1):sum(n),1])
+SVs1 = rbind(model$SV[1:n[1],],model$SV[(sum(n[1:2])+1):sum(n),])
+w1 = t(SVs1)%*%coef1
+w1 <- apply(w1, 2, function(v){sqrt(sum(v^2))})  # weight
+w1 <- sort(w1, decreasing = T)
+
+print(w1)
+
+coef14 = c(model$coefs[1:n[14],2], model$coefs[(sum(n[1:13])+1):sum(n),1])
+SVs14 = rbind(model$SV[1:n[14],],model$SV[(sum(n[1:13])+1):sum(n),])
+
+
+# rho stores the b's, [1vs2, 1vs3, 2vs3]
+b1 = -model$rho[2]
+b14 = -model$rho[15]
+
+plot(rbind(full_data[1:print(round(nrow(full_data) * 0.75))], full_data[print((round(nrow(full_data) * 0.75) + 1)):nrow(full_data)]), col = full_data$ulykketype)
+abline(-b1/w1[2], -w1[1]/w1[2], col=4)
+
 
 # Configure the training data
 MTO_container <-
@@ -2160,7 +2471,7 @@ roc_SVM %>%
 # Changing from 1000 to 100 trees due to the time it took the calculations
 library(ranger)
 
-rf_classification_spec <- rand_forest(trees = 100) %>%
+rf_classification_spec <- rand_forest(trees = 1000) %>%
   set_engine("ranger") %>%
   set_mode("classification")
 
@@ -2191,7 +2502,7 @@ collect_metrics(rf_classification_rs)
 library(performanceEstimation)
 
 best_acc_rf_rs <- rf_classification_rs %>%
-  show_best("accuracy")
+  show_best("roc_auc")
 
 rf_classification_rs %>%
   collect_predictions() %>%
@@ -2208,12 +2519,12 @@ rf_classification_rs %>%
       hjust = 1.1,
       color = "black"
     ))+
-  ggtitle(label = " Random forest of 1000 trees prediciting accident types without removing \n non-norwegian reports. Best accuracy: .904, ROC-AUC: .971")
+  ggtitle(label = " Random forest of 1000 trees predicting MTO accident reports. \n Best accuracy: .906, ROC-AUC: .974")
 
 rf_classification_rs_pred <- rf_classification_rs %>%
   collect_predictions()
 
-rf_classification_rs_pred %>%
+rf_classification_rs %>%
   autoplot()
 
 # That was not useful
@@ -2374,6 +2685,8 @@ null_rs
 collect_metrics(null_rs)
 collect_metrics(svm_regression_rs)
 
+
+last_fit(full_data_regression_wf, full_data_test)
 
 # Compare to random forest
 
@@ -2581,7 +2894,7 @@ full_data_regression_fit %>%
   theme_bw() +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
-final_fitted %>%
+final_regression_fitted %>%
   collect_predictions() %>%
   ggplot(aes(antall_skadet, .pred)) +
   geom_abline(lty = 2, color = "gray80", size = 1.5) +
@@ -2599,12 +2912,20 @@ final_fitted %>%
   theme_bw()
 
 full_data_bind <- collect_predictions(final_regression_fitted) %>%
-  bind_cols(full_data %>% select(-antall_skadet)) %>%
+  bind_cols(full_data_test %>% select(-antall_skadet)) %>%
   filter(abs(antall_skadet - .pred) > 1)
 
 full_data_bind %>%
   arrange(-antall_skadet) %>%
   select(antall_skadet, .pred, ALL)
+
+#### OL ####
+# Maybe we can aggregate some specific terms?
+
+
+
+avg_ol_hits  <- aggregate(eu_hits ~ Month, date_eu_hits, mean)
+
 
 #### Deceased regression #####
 # Trying it out with deceased rather than injured and adding some predictor
@@ -2941,7 +3262,7 @@ model_dir <-
 if (!dir.exists(model_dir))
   dir.create(model_dir)
 
-k_list <- seq(1, 200, by = 1)
+k_list <- seq(1, 196, by = 1)
 setwd("~/Master/masterthesis/models_b6f60a5ca3dbd516b99a26f66ee8276ad1ed2829")
 
 library(parallel)
