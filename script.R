@@ -88,7 +88,25 @@ library(textmineR) # Naive Bayes classifiers
 
 if (!require("parallel"))
   install.packages("parallel")
-library(parallel) # Naive Bayes classifiers
+library(parallel) # Parallel processing to speed up some processes
+
+if (!require("cld3"))
+  install.packages("cld3")
+library(cld3) # Google's language identification model
+
+if (!require("pbapply"))
+  install.packages("pbapply")
+library(pbapply) # A wrapper for l/sapply with progress bars, not strictly 
+# necessary, but very useful for longer apply functions
+
+if (!require("fastText"))
+  install.packages("fastText")
+library(fastText) # The fastText language identification package
+
+if (!require("lemon"))
+  install.packages("lemon")
+library(lemon) # Added functionality for ggplot2, used for facetting plots
+
 
 ##### Functions #####
 # function to get & plot the most informative terms by a readr::specificed number
@@ -134,7 +152,7 @@ top_terms_by_topic_LDA <-
         ggplot(aes(term, beta, fill = factor(topic))) + # plot beta by theme
         theme_bw() +
         geom_col(show.legend = FALSE) + # as a bar plot
-        facet_wrap(~ topic, scales = "free") + # which each topic in a seperate plot
+        facet_wrap(~ topic, scales = "free") + # which each topic in a separate plot
         labs(x = NULL, y = "Beta") + # no x label, change y label
         coord_flip() # turn bars sideways
     } else{
@@ -433,6 +451,22 @@ table(duplicated(full_data$ulykke_id))
 table(duplicated(full_data$person_id))
 table(duplicated(full_data$årsak_id))
 
+# The person_id variable can be interesting:
+
+table(person$person_id %in% personskade$person_id)
+
+# Let's do a quick check of how many cases have several person_ids connected to
+# one ulykke_id, as there might be a separate entry for each person to an accident
+
+table(duplicated(full_data$person_id)[!duplicated(full_data$ulykke_id)])
+
+# Checking that all the person_ids are present in the larger variable:
+
+table(full_data$person_id.x %in% full_data$person_id)
+table(full_data$person_id.y %in% full_data$person_id)
+
+# 79 800 return true, meaning all of them. 
+
 # We quickly see that ulykke_id is the one that's duplicated the least, meaning
 # that we should be able to use this one to group the following part
 
@@ -459,7 +493,7 @@ full_data <- full_data %>%
   summarise(ALL = str_squish(toString(unique(value)))) %>%
   inner_join(full_data)
 
-# We ended up on a total of 79800 observations.
+# We ended up on a total of 79 795 observations.
 
 head(full_data$ALL)
 
@@ -474,6 +508,21 @@ table(duplicated(full_data$ulykke_id))
 # We ended up with 37830 observations, of which none of the ulykke_ids are
 # repeated. In total we lost 6 observations from the ulykke dataset, but that's 
 # not an issue.
+
+# Checking whether all person_ids are represented
+
+table(personskade$person_id %in% full_data$person_id)
+
+# 1692 are not represented, but their accident_id is represented and their 
+# injuries are therefore added on to the report.
+
+# Let's manually inspect one of them
+
+head(personskade$person_id %in% full_data$person_id, 20)
+
+# The first one is actually in the full data, let's look at that one.
+
+table(full_data$ALL[full_data$person_id == paste0(personskade$person_id[1])])
 
 # Removing datasets we combined to save some space.
 
@@ -536,7 +585,7 @@ full_data %>%
     axis.title = element_text(size = 10),
     legend.position = "bottom"
   ) +
-  geom_hline(yintercept = a, color = safe_colorblind_palette[2]) +
+  geom_hline(yintercept = a, color = "black") +
   geom_label(
     aes(
       x = 1,
@@ -545,8 +594,7 @@ full_data %>%
     ),
     nudge_x = 3.1,
     nudge_y = 50,
-    size = 5,
-    family = "Times"
+    size = 5
   ) +
   scale_y_continuous(breaks = seq(0, 2000, by = 250)) +
   labs(
@@ -579,7 +627,8 @@ month_name <-
     )
   )
 
-# Setting the date format to English rather than Norwegian
+# Setting the date format to English rather than Norwegian, to get the month's
+# levels in the appropriate language.
 
 Sys.setlocale("LC_TIME", "English")
 
@@ -628,12 +677,12 @@ ggplot(full_data,
     legend.position = "bottom"
   ) +
   scale_y_continuous(breaks = seq(0, 4000, by = 500)) +
-  geom_hline(yintercept = 3152) +
+  geom_hline(yintercept = 3067) +
   geom_label(
     aes(
       x = 0,
-      y = 3152,
-      label = "Mean = 3 152.5"
+      y = 3067,
+      label = "Mean = 3 067"
     ),
     nudge_x = 6.5,
     nudge_y = 110,
@@ -642,9 +691,9 @@ ggplot(full_data,
   labs(
     x = "Month",
     y = "Number of entries per month",
-    title = "Reported accidents (1981-2022) in Sdir's dataset. N = 37 830")
+    title = "Reported accidents (1981-2022) in Sdir's dataset. N = 36 806")
 
-# I just added it manually. Might create a prettier solution later.
+# I just added the N and means manually. Might create a prettier solution later.
 rm(a)
 
 # How many injured and dead
@@ -733,7 +782,7 @@ full_data %>%
        y = "Count",
        title = "Distribution of deceased or missing people from each report") +
   scale_x_continuous(breaks = seq(0, 20, by = 1)) +
-  geom_text(aes(label = n), nudge_y = 500) +
+  geom_text(aes(label = n), nudge_y = 600) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 
 # Visualising accident types
@@ -762,111 +811,6 @@ full_data %>%
        title = "Distribution of accident types from each report") +
   geom_text(aes(label = n), nudge_y = 650) +
   scale_fill_manual(values = c(safe_colorblind_palette))
-
-full_data %>%
-  count(ulykketype) %>%
-  ggplot(aes(ulykketype, n, label = ulykketype)) +
-  geom_col() +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(
-      angle = 60,
-      size = 10,
-      vjust = 1,
-      hjust = 1.1,
-      color = "black"
-    ),
-    axis.text.y = element_text(size = 10),
-    axis.title.y = element_text(size = 12.5),
-    axis.title.x = element_text(size = 12.5),
-    axis.title = element_text(size = 10),
-    legend.position = "bottom"
-  ) +
-  labs(x = "Accident types (in Norwegian)",
-       y = "Count",
-       title = "Distribution of accident types from each report") +
-  geom_text(aes(label = n), nudge_y = 650) +
-  scale_fill_manual(values = c(safe_colorblind_palette))
-
-# Faceting accident type over years
-
-full_data$years <- years(full_data$ulykkedato2)
-
-full_data$years <- as.numeric(as.character(full_data$years))
-
-table(full_data$years)
-
-table(full_data$ulykketype)
-
-p <- ggplot(data = full_data, aes(years)) +
-  geom_histogram(stat = "count", binwidth = "unscaled x") +
-  theme_bw()+
-  theme(
-    axis.text.x = element_text(
-      size = 8,
-      color = "black"
-    ),
-    axis.text.y = element_text(size = 10),
-    axis.title.y = element_text(size = 12.5),
-    axis.title = element_text(size = 10),
-    legend.position = "bottom"
-  ) +
-  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
-  scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
-  guides(x = guide_axis(angle = 50))+ #, x.sec = guide_axis(angle = 50))+
-  labs(
-    x = "Year",
-    y = "Number of entries per year",
-    title = paste0("Reported accidents in Sdir's dataset, by accident type. N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
-  ) +
-  scale_fill_manual(values = c(safe_colorblind_palette))
-p
-
-# Adding a margin or a total plot.
-
-df <- rbind(full_data, transform(full_data, ulykketype = "All combined"))
-
-# The package "lemon" let's us add x-ticks to the plot with the command below,
-# facet_rep_wrap.
-
-library(lemon)
-
-p %+% df + facet_rep_wrap(.~ ulykketype, ncol = 3, scales = "free_y", repeat.tick.labels = "bottom")
-
-p2 <- ggplot(data = full_data, aes(ulykkesmåned)) +
-  geom_histogram(stat = "count", binwidth = "unscaled x") +
-  theme_bw()+
-  theme(
-    axis.text.x = element_text(
-      size = 8,
-      color = "black"
-    ),
-    axis.text.y = element_text(size = 10),
-    axis.title.y = element_text(size = 12.5),
-    axis.title = element_text(size = 10),
-    legend.position = "bottom"
-  ) +
-  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
-  #scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
-  guides(x = guide_axis(angle = 50))+ #, x.sec = guide_axis(angle = 50))+
-  labs(
-    x = "Year",
-    y = "Number of entries per year",
-    title = paste0("Reported accidents in Sdir's dataset, by accident type. N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
-  ) +
-  scale_fill_manual(values = c(safe_colorblind_palette))
-p2
-
-# Adding a margin or a total plot.
-
-df <- rbind(full_data, transform(full_data, ulykketype = "All combined"))
-
-# The package "lemon" let's us add x-ticks to the plot with the command below,
-# facet_rep_wrap.
-
-library(lemon)
-
-p2 %+% df + facet_rep_wrap(.~ ulykketype, ncol = 3, scales = "free_y", repeat.tick.labels = "bottom")
 
 
 # A sneak peak at the MTO variable:
@@ -902,6 +846,114 @@ full_data$MTO[full_data$ulykketype == "Fartøyet er savnet, forsvunnet"] <- "Org
 full_data$MTO <- as.factor(as.character(full_data$MTO))
 
 
+
+full_data %>%
+  count(MTO) %>%
+  ggplot(aes(MTO, n, label = MTO)) +
+  geom_col() +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      size = 10,
+      vjust = 1,
+      hjust = 1.1,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title.x = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  labs(x = "Accident types (in Norwegian)",
+       y = "Count",
+       title = "Distribution of accident types (MTO) from each report") +
+  geom_text(aes(label = n), nudge_y = 650) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+
+# Faceting accident type over years
+
+full_data$years <- years(full_data$ulykkedato2)
+
+full_data$years <- as.numeric(as.character(full_data$years))
+
+table(full_data$years)
+
+table(full_data$ulykketype)
+
+p <- ggplot(data = full_data, aes(years)) +
+  geom_histogram(stat = "count", binwidth = "unscaled x") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(
+      size = 8,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
+  scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
+  guides(x = guide_axis(angle = 50))+ #, x.sec = guide_axis(angle = 50))+
+  labs(
+    x = "Year",
+    y = "Number of entries per year",
+    title = "Reported accidents in Sdir's dataset, by accident type. N = 36 806"
+    #title = paste0("Reported accidents in Sdir's dataset, by accident type. N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+p
+
+# Adding a margin or a total plot.
+
+df <- rbind(full_data, transform(full_data, ulykketype = "All combined"))
+
+# The package "lemon" let's us add x-ticks to the plot with the command below,
+# facet_rep_wrap.
+
+library(lemon)
+
+p %+% df + facet_rep_wrap(.~ ulykketype, ncol = 3, scales = "free_y", repeat.tick.labels = "bottom")
+
+p2 <- ggplot(data = full_data, aes(ulykkesmåned)) +
+  geom_histogram(stat = "count", binwidth = "unscaled x") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(
+      size = 8,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
+  #scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
+  guides(x = guide_axis(angle = 50))+ #, x.sec = guide_axis(angle = 50))+
+  labs(
+    x = "Year",
+    y = "Number of entries per year",
+    title = "Reported accidents in Sdir's dataset, by accident type. N = 36 806"
+    #title = paste0("Reported accidents in Sdir's dataset, by accident type. N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+p2
+
+# Adding a margin or a total plot.
+
+df <- rbind(full_data, transform(full_data, ulykketype = "All combined"))
+
+# The package "lemon" let's us add x-ticks to the plot with the command below,
+# facet_rep_wrap.
+
+library(lemon)
+
+p2 %+% df + facet_rep_wrap(.~ ulykketype, ncol = 3, scales = "free_y", repeat.tick.labels = "bottom")
+
 p3 <- ggplot(data = full_data, aes(years)) +
   geom_histogram(stat = "count", binwidth = "unscaled x") +
   theme_bw()+
@@ -921,7 +973,8 @@ p3 <- ggplot(data = full_data, aes(years)) +
   labs(
     x = "Year",
     y = "Number of entries per year",
-    title = paste0("Reported accidents in Sdir's dataset, by accident type (MTO). N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+    title = "Reported accidents in Sdir's dataset, by accident type (MTO). N = 36 806"
+    #title = paste0("Reported accidents in Sdir's dataset, by accident type (MTO). N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
   ) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 p3
@@ -951,7 +1004,8 @@ p4 <- ggplot(data = full_data, aes(ulykkesmåned)) +
   labs(
     x = "Year",
     y = "Number of entries per year",
-    title = paste0("Reported accidents in Sdir's dataset, by accident type (MTO). N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+    title = "Reported accidents in Sdir's dataset, by accident type (MTO). N = 36 806"
+    #title = paste0("Reported accidents in Sdir's dataset, by accident type (MTO). N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
   ) +
   scale_fill_manual(values = c(safe_colorblind_palette))
 p4
@@ -960,7 +1014,39 @@ p4
 
 df2 <- rbind(full_data, transform(full_data, MTO = "All combined"))
 
-p4 %+% df2 + facet_rep_wrap(.~ MTO, ncol = 2, scales = "free_y", repeat.tick.labels = "bottom")
+p4 %+% df2 + facet_rep_wrap(.~ MTO, ncol = 2, scales = "fixed", repeat.tick.labels = "bottom")
+
+
+p5 <- ggplot(data = full_data, aes(length_ALL_cleaned)) +
+  geom_histogram(stat = "count", binwidth = "unscaled x") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(
+      size = 8,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
+  #scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
+  guides(x = guide_axis(angle = 50))+ #, x.sec = guide_axis(angle = 50))+
+  labs(
+    x = "How many words in each cleaned report",
+    y = "Count of reports with x number of words",
+    title = "Length of reports, by accident type (MTO). N = 36 806"
+    #title = paste0("Reported accidents in Sdir's dataset, by accident type (MTO). N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+p5
+
+# Adding a margin or a total plot.
+
+df2 <- rbind(full_data, transform(full_data, MTO = "All combined"))
+
+p4 %+% df2 + facet_rep_wrap(.~ MTO, ncol = 2, scales = "free", repeat.tick.labels = "bottom")
 
 # Removing objects no longer in use:
 
@@ -974,15 +1060,23 @@ rm(p4)
 
 # Without removing stopwords
 
-full_data %>%
-  unnest_tokens(word, ALL) %>%
-  count(word, sort = TRUE)
+# Using write.csv to quickly get comma-separated values to input directly into a 
+# table, choosing the top 10 with head(10), without saving locally
 
 full_data %>%
   unnest_tokens(word, ALL) %>%
+  count(word, sort = TRUE) %>%
+  head(10) %>%
+  write.csv() 
+
+a <- full_data %>%
+  mutate(all = tolower(ALL)) %>%
+  unnest_tokens(word, all) %>%
   anti_join(get_stopwords("no")) %>%
   anti_join(get_stopwords("en")) %>%
-  count(word, sort = TRUE)
+  count(word, sort = TRUE) %>%
+  head(10) %>%
+  write.csv()
 
 # Removing custom words
 
@@ -1002,12 +1096,39 @@ language_identification_words <-
     "fra"
   )
 
+
+custom_words <-
+  c(
+    "pus",
+    "ca",
+    "på",
+    "g09",
+    "g11",
+    "kl",
+    "fritekster",
+    "konvertert",
+    "fikk",
+    "ulykkesbeskrivelse",
+    "m",
+    "skadebeskrivelse",
+    "077",
+    "106",
+    "na",
+    "dama",
+    NA,
+    "NA"
+  )
+
 full_data %>%
-  unnest_tokens(word, ALL) %>%
+  mutate(all = tolower(removePunctuation(removeNumbers(ALL)))) %>%
+  unnest_tokens(word, all) %>%
   anti_join(get_stopwords("no")) %>%
   anti_join(get_stopwords("en")) %>%
-  filter(!word %in% language_identification_words) %>%
-  count(word, sort = TRUE)
+  filter(!word %in% custom_words) %>%
+  count(word, sort = TRUE) %>%
+  head(10) %>%
+  write.csv()
+
 
 #### Trying to detect languages ####
 ##### Google's text recognition #####
@@ -1016,13 +1137,6 @@ library(pbapply)
 
 # We should not remove all stopwords before identifying languages, as they might
 # indicate a language.
-
-all_stop_words <-
-  rbind(
-    tibble(word = tm::stopwords(kind = "no")),
-    tibble(word = tm::stopwords(kind = "en")),
-    tibble(word = custom_words)
-  )
 
 language_identification_words <- paste(language_identification_words, collapse = "|")
 
@@ -1114,7 +1228,7 @@ full_data$languages[
 
 table(full_data$ALL_cleaned[full_data$languages == "de"])
 
-# These reports in german are actually norwegian
+# These reports in German are actually Norwegian
 
 full_data$languages[full_data$languages == "de"] <- "no"
 
@@ -1124,7 +1238,7 @@ full_data$languages[full_data$ALL_cleaned == "forbrenning"] <- "no"
 
 table(full_data$ALL_cleaned[full_data$languages == "sv"])
 
-# Looks like most of it is actually swedish
+# Looks like most of it is actually Swedish
 
 table(full_data$ALL_cleaned[full_data$languages == "sv" & full_data$length_ALL_cleaned > 100])
 
@@ -1153,9 +1267,9 @@ table(years(full_data$ulykkedato2)[full_data$ALL_cleaned == "drukning"])
 
 # Let's look at who made the registered entry
 
-table(years(full_data$ulykkedato2)[full_data$registrert_av.x == "Konvertering"])
+table(full_data$registrert_av.x[full_data$registrert_av.x == "Konvertering"])
 
-
+# All of them from "Konvertering" or "Converting"
 # A quick look at the accident types as well
 
 table(full_data$ulykketype[full_data$registrert_av.x == "Konvertering"])
@@ -1533,6 +1647,21 @@ table(full_data$languages_combined_count)
 
 table(full_data$languages_combined_count2)
 
+full_data_removed <- full_data[full_data$languages_combined_count == 0, ]
+
+full_data_removed <- as.data.frame(full_data_removed$length_ALL)
+
+# Using stargazer to export some descriptive statistics
+
+#library(stargazer)
+#stargazer(full_data_removed)
+
+full_data_kept <- full_data[full_data$languages_combined_count != 0, ]
+
+full_data_kept <- as.data.frame(full_data_kept$length_ALL)
+
+#stargazer(full_data_kept)
+
 full_data <- full_data[full_data$languages_combined_count != 0, ]
 
 #### Classification model ####
@@ -1540,6 +1669,7 @@ full_data <- full_data[full_data$languages_combined_count != 0, ]
 zeroNAs <- names(which(colSums(is.na(full_data))<=0))
 lessthanhundred <- names(which(colSums(is.na(full_data))<100))
 lessthanthousand <- names(which(colSums(is.na(full_data))<1000))
+lessthan10percent <- names(which(colSums(is.na(full_data))<3600))
 
 colnames(full_data)[!apply(full_data, 2, anyNA)]
 
@@ -1596,6 +1726,20 @@ custom_words <-
     "NA"
   )
 
+# Gonna clean the text variable a little more:
+
+all_stop_words <-
+  rbind(
+    tibble(word = tm::stopwords(kind = "no")),
+    tibble(word = tm::stopwords(kind = "en")),
+    tibble(word = custom_words)
+  )
+
+full_data$ALL_cleaned <- pblapply(full_data$ALL_cleaned, tm::removeWords, all_stop_words$word)
+
+full_data$ALL_cleaned <- unlist(full_data$ALL_cleaned)
+
+full_data$ALL_cleaned <- str_squish(full_data$ALL_cleaned)
 
 unbalanced_full_data_rec_ulykketype <- recipe(ulykketype ~ ALL_cleaned, data = full_data_train) %>%
   step_tokenize(ALL_cleaned) %>%
@@ -1669,12 +1813,12 @@ autoplot(multi_lasso_rs_ulykketype) +
 # Best ROC-AUC
 
 multi_lasso_rs_ulykketype %>%
-  show_best("roc_auc")
+  show_best("roc_auc", ... = select_by_one_std_err())
 
 # What's the best accuracy?
 
 best_acc_ulykketype <- multi_lasso_rs_ulykketype %>%
-  show_best("accuracy")
+  show_best("accuracy", ... = select_by_one_std_err())
 
 best_acc_ulykketype
 
@@ -1688,6 +1832,8 @@ multi_lasso_rs_ulykketype %>%
   autoplot(type = "heatmap") +
   scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
   scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
+  labs(title = "Confusion matrix of a multinomial classification of accident type",
+       subtitle = " Mean accuracy = 0.573, ROC-AUC = 0.676, across 10-fold cross-validation") +
   theme(
     axis.text.x = element_text(
       angle = 60,
@@ -1701,13 +1847,15 @@ multi_lasso_rs_ulykketype %>%
 
 multi_lasso_rs_ulykketype %>%
   collect_predictions() %>%
-  filter(penalty == best_acc$penalty) %>%
+  filter(penalty == best_acc_ulykketype$penalty) %>%
   # filter(id == "Fold01") %>%
   filter(.pred_class != ulykketype) %>%
   conf_mat(ulykketype, .pred_class) %>%
   autoplot(type = "heatmap") +
   scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
   scale_x_discrete(labels = function(x) str_wrap(x, 25)) + 
+  labs(title = "Confusion matrix of a multinomial classification of accident type",
+       subtitle = " Mean accuracy = 0.573, ROC-AUC = 0.676, across 10-fold cross-validation, correct predictions removed") +
   theme(
     axis.text.x = element_text(
       angle = 60,
@@ -1731,12 +1879,12 @@ multi_lasso_rs_small_ulykketype
 collect_metrics(multi_lasso_rs_small_ulykketype)
 
 multi_lasso_rs_small_ulykketype %>%
-  show_best("roc_auc")
+  show_best("roc_auc", ... = select_by_one_std_err())
 
 # What's the best accuracy?
 
 best_acc_small_ulykketype <- multi_lasso_rs_small_ulykketype %>%
-  show_best("accuracy")
+  show_best("accuracy", ... = select_by_one_std_err())
 
 best_acc_small_ulykketype
 
@@ -1744,12 +1892,14 @@ best_acc_small_ulykketype
 
 multi_lasso_rs_small_ulykketype %>%
   collect_predictions() %>%
-  filter(penalty == best_acc_small$penalty) %>%
+  filter(penalty == best_acc_small_ulykketype$penalty) %>%
   #filter(id == "Fold01") %>%
   conf_mat(ulykketype, .pred_class) %>%
   autoplot(type = "heatmap") +
   scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
   scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
+  labs(title = "Confusion matrix of a multinomial classification of accident type",
+       subtitle = " Mean accuracy = 0.573, ROC-AUC = 0.676, across 10-fold cross-validation, smaller regularisation") +
   theme(
     axis.text.x = element_text(
       angle = 60,
@@ -1760,6 +1910,11 @@ multi_lasso_rs_small_ulykketype %>%
     ))
 
 # No differences between the different sizes of lambda regularisation
+
+# Evaluating and testing on real data
+
+testing_multi_lasso_rs_ulykketype <- last_fit
+
 
 # Using a sparse encoding:
 
@@ -1819,13 +1974,13 @@ library(textrecipes)
 # with more data than the other algorithms. 
 
 MTO_full_data_rec <-
-  recipe(MTO ~ ALL, data = MTO_full_data_train) %>%
-  step_tokenize(ALL) %>%
+  recipe(MTO ~ ALL_cleaned, data = MTO_full_data_train) %>%
+  step_tokenize(ALL_cleaned) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tokenfilter(ALL, max_tokens = 1e3) %>%
-  step_tfidf(ALL)
+  step_tokenfilter(ALL_cleaned, max_tokens = 1e3) %>%
+  step_tfidf(ALL_cleaned)
 
 MTO_full_data_rec
 
@@ -1850,7 +2005,10 @@ MTO_nb_fit <- MTO_full_data_wf %>%
   add_model(nb_spec) %>%
   parsnip::fit(data = MTO_full_data_train)
 
+MTO_nb_fit
+
 set.seed(234)
+
 MTO_full_data_folds <- vfold_cv(MTO_full_data_train)
 
 MTO_full_data_folds
@@ -1875,7 +2033,7 @@ MTO_nb_rs_predictions <- collect_predictions(MTO_nb_rs)
 MTO_nb_rs_metrics
 
 MTO_nb_rs_acc <- MTO_nb_rs %>%
-  show_best("accuracy")
+  show_best("accuracy", ... = select_by_one_std_err())
 
 MTO_nb_rs %>%
   #filter(id == "Fold01") %>% 
@@ -1886,28 +2044,12 @@ MTO_nb_rs %>%
   autoplot(type = "heatmap") +
   labs(
     color = NULL,
-    title = "Confusion matrix of MTO using Naive Bayes"
+    title = "Confusion matrix of MTO using Naive Bayes",
+    subtitle = "Mean accuracy = 0.719 and ROC-AUC = 0.677 over 10 fold cross-validation"
   )
 
 conf_mat_resampled(MTO_nb_rs, tidy = FALSE) %>%
   autoplot(type = "heatmap")
-
-multi_lasso_rs_small %>%
-  collect_predictions() %>%
-  filter(penalty == best_acc_small$penalty) %>%
-  #filter(id == "Fold01") %>%
-  conf_mat(ulykketype, .pred_class) %>%
-  autoplot(type = "heatmap") +
-  scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
-  theme(
-    axis.text.x = element_text(
-      angle = 60,
-      size = 10,
-      vjust = 1,
-      hjust = 1.1,
-      color = "black"
-    ))
 
 # That was not useful, as most cases were appointed to the Man category.
 
@@ -1926,6 +2068,8 @@ null_rs <- workflow() %>%
 
 null_rs %>%
   collect_metrics()
+
+# Accuracy of 0.710 and ROC-AUC of 0.5
 
 # Splitting it up into man made and structural origins
 
@@ -1947,12 +2091,12 @@ MTO_man_full_data_test <- testing(MTO_man_full_data_split)
 
 MTO_man_full_data_rec <-
   recipe(MTO_man ~ ALL, data = MTO_man_full_data_train) %>%
-  step_tokenize(ALL) %>%
+  step_tokenize(ALL_cleaned) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tokenfilter(ALL, max_tokens = 1e4) %>%
-  step_tfidf(ALL)
+  step_tokenfilter(ALL_cleaned, max_tokens = 1e4) %>%
+  step_tfidf(ALL_cleaned)
 
 MTO_man_full_data_rec
 
@@ -2019,13 +2163,13 @@ conf_mat_resampled(MTO_man_nb_rs, tidy = FALSE) %>%
 # with multiple classes for classification, which are rather unbalanced:
 library(themis)
 
-MTO_unbalanced_full_data_rec <- recipe(MTO ~ ALL, data = MTO_full_data_train) %>%
-  step_tokenize(ALL) %>%
+MTO_unbalanced_full_data_rec <- recipe(MTO ~ ALL_cleaned, data = MTO_full_data_train) %>%
+  step_tokenize(ALL_cleaned) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tokenfilter(ALL, max_tokens = 1e3) %>%
-  step_tfidf(ALL) %>%  
+  step_tokenfilter(ALL_cleaned, max_tokens = 1e3) %>%
+  step_tfidf(ALL_cleaned) %>%  
   step_downsample(MTO)
 
 MTO_unbalanced_vfolds <- vfold_cv(MTO_full_data_train)
@@ -2101,7 +2245,9 @@ multi_lasso_rs %>%
   conf_mat(MTO, .pred_class) %>%
   autoplot(type = "heatmap") +
   scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, 25))
+  scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
+  labs(title = "Confusion matrix for classifying MTO accidents",
+       subtitle = "Accuracy = 0.921, AUC-ROC = 0.974, using multinomial lasso modelling")
 #theme_bw(legend = "none")
 # theme(
 #   axis.text.x = element_text(
@@ -2122,7 +2268,9 @@ multi_lasso_rs %>%
   conf_mat(MTO, .pred_class) %>%
   autoplot(type = "heatmap") +
   scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, 25)) 
+  scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
+  labs(title = "Confusion matrix for classifying MTO accidents",
+       subtitle = "Accuracy = 0.921, AUC-ROC = 0.974, using multinomial lasso modelling. Correct predictions removed.")
 # theme(
 #   axis.text.x = element_text(
 #     angle = 60,
@@ -2153,7 +2301,9 @@ multi_lasso_rs_small %>%
   conf_mat(MTO, .pred_class) %>%
   autoplot(type = "heatmap") +
   scale_y_discrete(labels = function(x) str_wrap(x, 20)) +
-  scale_x_discrete(labels = function(x) str_wrap(x, 25)) 
+  scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
+  labs(title = "Confusion matrix for classifying MTO accidents",
+       subtitle = "Accuracy = 0.922, AUC-ROC = 0.974, using multinomial lasso modelling")
 # theme(
 #   axis.text.x = element_text(
 #     angle = 60,
@@ -2172,58 +2322,64 @@ tune_spec2 <- multinom_reg(penalty = tune(), mixture = 1) %>%
 
 tune_spec2
 
-sparse_wf <- workflow() %>%
-  add_recipe(MTO_unbalanced_full_data_rec, blueprint = sparse_bp) %>%
-  add_model(tune_spec2)
-
-tune_wf <- workflow() %>%
+MTO_tune_wf <- workflow() %>%
   add_recipe(MTO_unbalanced_full_data_rec, blueprint = sparse_bp) %>%
   add_model(tune_spec2)
 
 set.seed(2022)
-tune_rs <- tune_grid(
-  tune_wf,
+MTO_tune_rs <- tune_grid(
+  MTO_tune_wf,
   MTO_unbalanced_vfolds,
   grid = lambda_grid,
   control = control_resamples(save_pred = TRUE)
 )
 
-tune_rs
+MTO_tune_rs
 
-collect_metrics(tune_rs)
+collect_metrics(MTO_tune_rs)
 
-autoplot(tune_rs) +
+autoplot(MTO_tune_rs) +
   labs(
-    title = "Lasso model performance across regularization penalties",
+    title = "Lasso model performance across regularisation penalties (MTO)",
     subtitle = "Performance metrics can be used to identity the best penalty"
   )+
   theme_bw()
 
-tune_rs %>%
+MTO_tune_rs %>%
   show_best("roc_auc")
 
-tune_rs %>%
+MTO_tune_rs %>%
   show_best("accuracy")
 
-chosen_auc <- tune_rs %>%
+MTO_tune_chosen_auc <- MTO_tune_rs %>%
   select_by_one_std_err(metric = "roc_auc", -penalty)
 
-chosen_auc
+MTO_tune_chosen_auc
 
-# Continue here.
+set.seed(2022)
+MTO_tune_rs_small <- tune_grid(
+  MTO_tune_wf,
+  MTO_unbalanced_vfolds,
+  grid = smaller_lambda,
+  control = control_resamples(save_pred = TRUE)
+)
 
-final_lasso <- finalize_workflow(tune_wf, chosen_auc)
+get_metrics(MTO_tune_rs_small)
 
-fitted_lasso <- parsnip::fit(final_lasso, MTO_full_data_train)
+MTO_final_lasso <- finalize_workflow(MTO_tune_wf, MTO_tune_chosen_auc)
 
-fitted_lasso %>%
+collect_metrics(MTO_final_lasso)
+
+MTO_fitted_lasso <- parsnip::fit(MTO_final_lasso, MTO_full_data_test)
+
+MTO_fitted_lasso %>%
   pull_workflow_fit() %>%
   tidy() %>%
   arrange(-estimate)
 
-# Factors that assume structures. Higher number = higher estimate
+# Higher number = higher estimate of one of the three categories
 
-fitted_lasso %>%
+MTO_fitted_lasso %>%
   pull_workflow_fit() %>%
   tidy() %>%
   arrange(estimate)
@@ -2232,16 +2388,16 @@ fitted_lasso %>%
 # Tuning the recipe a little further:
 # Removing words that appear fewer than 10 times, possible typos etc.
 
-MTO_unbalanced_rec_v2 <- recipe(MTO ~ ALL, data = MTO_full_data_train) %>%
-  step_tokenize(ALL) %>%
+MTO_unbalanced_rec_v2 <- recipe(MTO ~ ALL_cleaned, data = MTO_full_data_train) %>%
+  step_tokenize(ALL_cleaned) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tokenfilter(ALL, max_tokens = tune(), min_times = 10) %>%
-  step_tfidf(ALL) %>%
+  step_tokenfilter(ALL_cleaned, max_tokens = tune::tune(), min_times = 10) %>%
+  step_tfidf(ALL_cleaned) %>%
   step_downsample(MTO)
 
-sparse_wf_v2 <- MTO_full_data_wf %>%
+MTO_sparse_wf_v2 <- MTO_full_data_wf %>%
   update_recipe(MTO_unbalanced_rec_v2, blueprint = sparse_bp) %>%
   add_model(multi_spec)
 
@@ -2258,51 +2414,51 @@ final_grid
 
 
 set.seed(2020)
-tune_rs <- tune_grid(
-  sparse_wf_v2,
+MTO_tune_rs <- tune_grid(
+  MTO_sparse_wf_v2,
   MTO_full_data_folds,
   grid = final_grid,
-  metrics = metric_set(accuracy, sensitivity, specificity)
+  metrics = metric_set(accuracy, sensitivity, specificity, roc_auc)
 )
 
-collect_metrics(tune_rs)
+collect_metrics(MTO_tune_rs)
 
-tune_rs %>%
+MTO_tune_rs %>%
   show_best("accuracy")
 
-tune_rs %>%
+MTO_tune_rs %>%
   show_best("sensitivity")
 
-tune_rs %>%
+MTO_tune_rs %>%
   show_best("specificity")
 
-autoplot(tune_rs) +
+autoplot(MTO_tune_rs) +
   labs(
     color = "Number of tokens",
     title = "Model performance across regularisation penalties and tokens",
-    subtitle = paste("We can choose a simpler model with higher regularisation")
+    subtitle = paste("Marginal differences, but the 3000 token regression has higher accuracy, sensitivity and specificity")
   )+
   theme_bw()
 
 
-choose_acc <- tune_rs %>%
+MTO_final_chosen_acc <- MTO_tune_rs %>%
   select_by_one_std_err(metric = "accuracy", -penalty)
 
-choose_acc
+MTO_final_chosen_acc
 
-final_wf <- finalize_workflow(sparse_wf_v2, choose_acc)
-final_wf
+MTO_final_wf <- finalize_workflow(MTO_sparse_wf_v2, MTO_final_chosen_acc)
+MTO_final_wf
 
-final_fitted <-
-  last_fit(final_wf,
+MTO_final_fitted <-
+  last_fit(MTO_final_wf,
            MTO_full_data_split,
            metrics = metric_set(accuracy, sensitivity, specificity, roc_auc))
 
-collect_metrics(final_fitted)
+collect_metrics(MTO_final_fitted)
 
 # Confusion matrix
 
-final_fitted %>%
+MTO_final_fitted %>%
   collect_predictions() %>%
   conf_mat(truth = MTO, estimate = .pred_class) %>%
   autoplot(type = "heatmap") +
@@ -2310,13 +2466,229 @@ final_fitted %>%
 Accuracy = 0.928, ROCAUC = 0.979")
  
 
-final_fitted$splits
+MTO_final_fitted$splits
 
-final_fitted %>%
+MTO_final_fitted %>%
   collect_metrics()
 
 # This is for the testing data, and an accuracy of .903 is pretty good.
 
+# Trying without downsampling
+
+MTO_unbalanced_rec_v3 <- recipe(MTO ~ ALL_cleaned, data = MTO_full_data_train) %>%
+  step_tokenize(ALL_cleaned) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(language = "en") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
+  step_tokenfilter(ALL_cleaned, max_tokens = tune::tune(), min_times = 10) %>%
+  step_tfidf(ALL_cleaned)
+
+
+MTO_sparse_wf_v3 <- MTO_full_data_wf %>%
+  update_recipe(MTO_unbalanced_rec_v3, blueprint = sparse_bp) %>%
+  add_model(multi_spec)
+
+
+# Tuning it further:
+
+final_grid <- grid_regular(
+  penalty(range = c(-4, 0)),
+  max_tokens(range = c(1e3, 5e3)),
+  levels = c(penalty = 20, max_tokens = 3)
+)
+
+final_grid
+
+
+set.seed(2020)
+MTO_tune_rs_v3 <- tune_grid(
+  MTO_sparse_wf_v3,
+  MTO_full_data_folds,
+  grid = final_grid,
+  metrics = metric_set(accuracy, sensitivity, specificity, roc_auc)
+)
+
+collect_metrics(MTO_tune_rs_v3)
+
+MTO_tune_rs_v3 %>%
+  show_best("accuracy")
+
+MTO_tune_rs_v3 %>%
+  show_best("sensitivity")
+
+MTO_tune_rs_v3 %>%
+  show_best("specificity")
+
+MTO_tune_rs_v3 %>%
+  show_best("roc_auc")
+
+autoplot(MTO_tune_rs_v3) +
+  labs(
+    color = "Number of tokens",
+    title = "Model performance across regularisation penalties and tokens",
+    subtitle = paste("Marginal differences, but the 3000 token regression has higher accuracy, sensitivity and specificity")
+  )+
+  theme_bw()
+
+
+MTO_final_chosen_acc_v3 <- MTO_tune_rs_v3 %>%
+  select_by_one_std_err(metric = "accuracy", -penalty)
+
+MTO_final_chosen_acc_v3
+
+MTO_final_wf_v3 <- finalize_workflow(MTO_sparse_wf_v3, MTO_final_chosen_acc_v3)
+MTO_final_wf_v3
+
+MTO_final_fitted_v3 <-
+  last_fit(MTO_final_wf_v3,
+           MTO_full_data_split,
+           metrics = metric_set(accuracy, sensitivity, specificity, roc_auc))
+
+collect_metrics(MTO_final_fitted_v3)
+
+pred_MTO_final_fitted_v3 <- MTO_final_fitted_v3 %>%
+  collect_predictions() %>%
+  conf_mat(truth = MTO, estimate = .pred_class) %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Fitting the trained and tuned elastic net model without downsampling to the test data",
+  subtitle = "Accuracy = 0.940, ROCAUC = 0.979")
+
+pred_MTO_final_fitted_v3
+
+# Getting the misclassifications:
+
+MTO_final_fitted_v3_bind <- collect_predictions(MTO_final_fitted_v3) %>%
+  bind_cols(MTO_full_data_test %>% select(-MTO))
+
+
+# Predictions that were actually Man, but the algorithm predicted less than 0.2
+# that they were "Man".
+
+incorrectly_predicted_man <- MTO_final_fitted_v3_bind %>%
+  filter(MTO == "Man", .pred_Man < 0.2)
+
+incorrectly_predicted_man$.pred_class[3]
+# Predictions of "Man" with over 0.8 probability, while the truth is "Technology"
+
+MTO_final_fitted_v3_bind %>%
+  filter(MTO == "Technology", .pred_Man > 0.8) %>%
+  select(ALL_cleaned) 
+
+# Trying to extract important terms:
+library(vip)
+
+metric_accuracy(actual = predictions_MTO_final_fitted_v3$MTO, 
+                predicted = predictions_MTO_final_fitted_v3$.pred_class)
+
+MTO_final_fitted_imp <- extract_fit_parsnip(MTO_final_fitted_v3$.workflow[[1]]) %>%
+  vi(lambda = MTO_final_chosen_acc_v3$penalty)
+
+MTO_final_fitted_imp$Variable <- str_remove_all(MTO_final_fitted_imp$Variable, "tfidf_ALL_cleaned_") 
+MTO_final_fitted_imp$Sign <- str_remove_all(MTO_final_fitted_imp$Variable, "tfidf_ALL_cleaned_") 
+
+vip(MTO_final_fitted_imp, num_features = 40)
+
+set.seed(1807)
+vip_MTO_final_fitted_v3 <- 
+  explain_tidymodels(
+    MTO_final_fitted_v3, 
+    data = MTO_full_data_train %>% select(-MTO), 
+    y = MTO_full_data_train$MTO,
+    label = "MTO",
+    verbose = TRUE
+  ) 
+
+predictions_MTO_final_fitted_v3 <- collect_predictions(MTO_final_fitted_v3)
+
+misclassifications <-
+  MTO_final_fitted_v3_bind[MTO_final_fitted_v3_bind$MTO != MTO_final_fitted_v3_bind$.pred_class,]
+
+misclassifications$.pred_class <- paste0("Predicted = ", misclassifications$.pred_class) 
+  
+misclassifications$MTO <- paste0("Truth = ", misclassifications$MTO)
+
+# misclassifications$ulykketype <- paste0("Truth = ", misclassifications$ulykketype)
+
+p_misclassifications_ulykketype <- ggplot(data = misclassifications, aes(ulykketype)) +
+  geom_histogram(stat = "count", binwidth = "unscaled x") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(
+      size = 10,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
+  #scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
+  guides(x = guide_axis(angle = 60))+ #, x.sec = guide_axis(angle = 50))+
+  labs(
+    x = "Accident types (truth)",
+    y = "Count",
+    title = "Misclassified accidents by accident type. N = 550"
+    #title = paste0("Reported accidents in Sdir's dataset, by accident type. N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))+
+  facet_wrap(. ~ .pred_class, nrow = 3)
+
+p_misclassifications_ulykketype
+
+p_misclassifications_months <- ggplot(data = misclassifications, aes(months(ulykkedato2))) +
+  geom_histogram(stat = "count", binwidth = "unscaled x") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(
+      size = 10,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
+  #scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
+  guides(x = guide_axis(angle = 60))+ #, x.sec = guide_axis(angle = 50))+
+  labs(
+    x = "Months",
+    y = "Count",
+    title = "Misclassified accidents by accident type. N = 550"
+    #title = paste0("Reported accidents in Sdir's dataset, by accident type. N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))+
+  facet_wrap(.~ .pred_class, nrow = 3)
+
+p_misclassifications_months
+
+p_misclassifications_years <- ggplot(data = misclassifications, aes(years)) +
+  geom_histogram(stat = "count", binwidth = "unscaled x") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(
+      size = 10,
+      color = "black"
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  #guides(x = guide_axis(n.dodge = 2, angle = 50), y.sec = guide_axis(), x.sec()) +
+  scale_x_continuous(breaks = seq(1981, 2022, by = 2))+
+  guides(x = guide_axis(angle = 60))+ #, x.sec = guide_axis(angle = 50))+
+  labs(
+    x = "Years",
+    y = "Count",
+    title = "Misclassified accidents by accident type. N = 550"
+    #title = paste0("Reported accidents in Sdir's dataset, by accident type. N = ", nrow(full_data[!is.na(full_data$ulykketype),]))
+  ) +
+  scale_fill_manual(values = c(safe_colorblind_palette))+
+  facet_wrap(.~ .pred_class, nrow = 3)
+
+p_misclassifications_years
 
 ##### SVM Classification: #####
 # We're swapping from using parsnip to using e1071
@@ -2418,6 +2790,16 @@ MTO_model <- train_model(MTO_container, "SVM", kernel = "linear", cost = 1, verb
 
 MTO_model_results <- classify_model(MTO_container, model, s = lambda_grid)
 
+summary(MTO_model_results)
+
+MTO_svm_predictions <- predict(MTO_model, MTO_container@classification_matrix, probability = T)
+
+MTO_svm_accuracy <- MTO_svm_predictions == full_data$MTO[1:print(round(nrow(full_data)*0.75))]
+
+prop.table(table(MTO_svm_accuracy))
+
+model_results <- classify_model(container, model, s = lambda_grid)
+
 tick <- Sys.time()
 tick - tock
 
@@ -2439,8 +2821,7 @@ svm_MTO <- tune::fit_resamples(
   MTO_unbalanced_vfolds
 )
 
-
-fit_svm_model <- fit(text_model_svm_wf, unbalanced_vfolds)
+fit_svm_model <- fit(MTO_text_model_svm_wf, MTO_unbalanced_vfolds)
 
 predictions_SVM <- predict(fit_svm_model, full_data_test)
 
@@ -2478,13 +2859,13 @@ rf_classification_spec <- rand_forest(trees = 1000) %>%
 rf_classification_spec
 
 classification_full_data_rec_mto <-
-  recipe(MTO ~ ALL, data = full_data_train) %>%
-  step_tokenize(ALL) %>%
+  recipe(MTO ~ ALL_cleaned, data = full_data_train) %>%
+  step_tokenize(ALL_cleaned) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tokenfilter(ALL, max_tokens = 1e3) %>%
-  step_tfidf(ALL) %>%
+  step_tokenfilter(ALL_cleaned, max_tokens = 1e3) %>%
+  step_tfidf(ALL_cleaned) %>%
   step_downsample(MTO)
 
 
@@ -2513,19 +2894,30 @@ rf_classification_rs %>%
   scale_x_discrete(labels = function(x) str_wrap(x, 25)) +
   theme(
     axis.text.x = element_text(
-      angle = 60,
       size = 10,
-      vjust = 1,
-      hjust = 1.1,
       color = "black"
     ))+
-  ggtitle(label = " Random forest of 1000 trees predicting MTO accident reports. \n Best accuracy: .906, ROC-AUC: .974")
+  ggtitle(label = " Random forest of 1000 trees predicting MTO accident reports. \n Best accuracy: .908, ROC-AUC: .975")
 
 rf_classification_rs_pred <- rf_classification_rs %>%
   collect_predictions()
 
-rf_classification_rs %>%
-  autoplot()
+final_rf_wf <- finalize_workflow(rf_classification_wf, best_acc_rf_rs)
+
+final_rf_wf
+
+# Evaluating it on real data
+
+final_rf_fitted <- last_fit(final_rf_wf, full_data_split)
+
+collect_metrics(final_rf_fitted)
+
+final_rf_fitted %>%
+  collect_predictions() %>%
+  conf_mat(truth = MTO, estimate = .pred_class) %>%
+  autoplot(type = "heatmap") +
+  ggtitle("Fitting the trained random forest model to the test data, 1000 trees
+Accuracy = 0.912, ROC-AUC = 0.979")
 
 # That was not useful
 
@@ -2568,13 +2960,13 @@ library(textrecipes)
 # We can add more predictors here, such as
 
 full_data_regression_rec <-
-  recipe(antall_skadet ~ ALL, data = full_data_train) %>%
-  step_tokenize(ALL) %>%
+  recipe(antall_skadet ~ ALL_cleaned, data = full_data_train) %>%
+  step_tokenize(ALL_cleaned) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tokenfilter(ALL, max_tokens = 1e3) %>%
-  step_tfidf(ALL) %>%
+  step_tokenfilter(ALL_cleaned, max_tokens = 1e3) %>%
+  step_tfidf(ALL_cleaned) %>%
   step_normalize(all_predictors())
 
 full_data_regression_rec
@@ -2587,7 +2979,7 @@ dim(full_data_bake)
 # Creating a workflow
 
 full_data_regression_wf <- workflow() %>%
-  add_recipe(full_data_rec)
+  add_recipe(full_data_regression_rec)
 
 full_data_regression_wf
 
@@ -2717,18 +3109,80 @@ collect_predictions(rf_regression_rs) %>%
     title = "Predicted and true number of injured people using, a random forest model",
     subtitle = "Each cross-validation fold is shown in a different color, using 1000 trees"
   ) +
-  #xlim(0,22)+
+  xlim(0,22)+
   theme_bw()
+
+final_regression_wf <- full_data_regression_wf %>%
+  add_model(rf_regression_spec)
+
+final_rf_regression <- last_fit(final_regression_wf, full_data_split)
+
+final_rf_regression_fit <- pull_workflow_fit(final_rf_regression$.workflow[[1]])
+
+final_rf_regression_fit %>%
+  tidy() %>%
+  filter(term != "Bias") %>%
+  mutate(
+    sign = case_when(
+      estimate > 0 ~ "1 or more injured",
+      TRUE ~"No injured"
+    ),
+    estimate = abs(estimate),
+    term = str_remove_all(term, "tfidf_ALL_cleaned_")
+  ) %>%
+  group_by(sign) %>%
+  top_n(20, estimate) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = estimate,
+    y = fct_reorder(term, estimate),
+    fill = sign
+  )) +
+  geom_col(show.legend = FALSE) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap( ~ sign, scales = "free") +
+  labs(
+    y = NULL,
+    title = paste(
+      "Variable importance for predicting amount of",
+      "injured people in accident reports"
+    ),
+    subtitle = paste(
+      "These features are the most importance",
+      "in predicting the amount of injured"
+    )
+  ) +
+  theme_bw() +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+
+final_rf_regression %>%
+  collect_predictions() %>%
+  ggplot(aes(antall_skadet, .pred)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_point(alpha = 0.3) +
+  labs(
+    x = "Actual",
+    y = "Predicted number of injured people",
+    title = paste(
+      "Predicted and actual number of injured for the testing set of",
+      "accident reports"
+    ),
+    subtitle = "For the testing set, predictions are most accurate between 0-5 injured"
+  ) +
+  scale_x_continuous(breaks = seq(0, 12, by = 1)) +
+  theme_bw()
+
+collect_metrics(final_rf_regression)
 
 # Using n-grams for modeling
 ngram_rec <- function(ngram_options) {
-  recipe(antall_skadet ~ ALL, data = full_data_train) %>%
+  recipe(antall_skadet ~ ALL_cleaned, data = full_data_train) %>%
     step_stopwords(language = "no") %>%
     step_stopwords(custom_stopword_source = custom_words) %>%
     step_stopwords(language = "en") %>%
-    step_tokenize(ALL, token = "ngrams", options = ngram_options) %>%
-    step_tokenfilter(ALL, max_tokens = 1e3) %>%
-    step_tfidf(ALL) %>%
+    step_tokenize(ALL_cleaned, token = "ngrams", options = ngram_options) %>%
+    step_tokenfilter(ALL_cleaned, max_tokens = 1e3) %>%
+    step_tfidf(ALL_cleaned) %>%
     step_normalize(all_predictors())
 }
 
@@ -2736,7 +3190,7 @@ svm_regression_wf <- workflow() %>%
   add_model(svm_regression_spec)
 
 fit_ngram <- function(ngram_options) {
-  fit_resamples(svm_wf %>% add_recipe(ngram_rec(ngram_options)),
+  fit_resamples(svm_regression_wf %>% add_recipe(ngram_rec(ngram_options)),
                 full_data_folds)
 }
 
@@ -2752,7 +3206,7 @@ set.seed(345)
 trigram_rs <- fit_ngram(list(n = 3, n_min = 1))
 
 set.seed(567)
-quadgram_rs <- fit_ngram(list(n = 3, n_min = 1))
+quadgram_rs <- fit_ngram(list(n = 4, n_min = 1))
 
 list(
   `1` = unigram_rs,
@@ -2785,13 +3239,13 @@ svm_regression_rs %>%
 # Tuning the model and changing the number of tokens we use
 
 final_regression_rec <- 
-  recipe(antall_skadet ~ ALL, data = full_data_train) %>%
-  step_tokenize(ALL, token = "ngrams", options = list(n = 2, n_min = 1)) %>%
-  step_tokenfilter(ALL, max_tokens = tune::tune()) %>%
+  recipe(antall_skadet ~ ALL_cleaned, data = full_data_train) %>%
+  step_tokenize(ALL_cleaned, token = "ngrams", options = list(n = 2, n_min = 1)) %>%
+  step_tokenfilter(ALL_cleaned, max_tokens = tune::tune()) %>%
   step_stopwords(language = "no") %>%
   step_stopwords(language = "en") %>%
   step_stopwords(custom_stopword_source = custom_words) %>%
-  step_tfidf(ALL) %>%
+  step_tfidf(ALL_cleaned) %>%
   step_normalize(all_predictors())
 
 
@@ -2807,7 +3261,7 @@ tune_regression_wf <- workflow() %>%
   add_recipe(final_regression_rec) %>%
   add_model(svm_spec)
 
-tune_wf
+tune_regression_wf
 
 final_grid <- grid_regular(max_tokens(range = c(1e3, 10e3)),
                            levels = 10)
@@ -2847,7 +3301,7 @@ chosen_mae
 
 final_regression_wf <- finalize_workflow(tune_regression_wf, chosen_mae)
 
-final_wf
+final_regression_wf
 
 # Evaluating it on real data
 
@@ -2860,14 +3314,13 @@ full_data_regression_fit <- pull_workflow_fit(final_regression_fitted$.workflow[
 full_data_regression_fit %>%
   tidy() %>%
   filter(term != "Bias") %>%
-  #filter(term != "for") %>%
   mutate(
     sign = case_when(
-      estimate > 0 ~ "More (than 1 injured)",
-      TRUE ~ "Fewer (than or equal to 1 injured)"
+      estimate > 0 ~ "1 or more injured",
+      TRUE ~"No injured"
     ),
     estimate = abs(estimate),
-    term = str_remove_all(term, "tfidf_ALL_")
+    term = str_remove_all(term, "tfidf_ALL_cleaned_")
   ) %>%
   group_by(sign) %>%
   top_n(20, estimate) %>%
@@ -2901,171 +3354,23 @@ final_regression_fitted %>%
   geom_point(alpha = 0.3) +
   labs(
     x = "Actual",
-    y = "Predicted amount of injured people",
+    y = "Predicted number of injured people",
     title = paste(
-      "Predicted and actual amount of injured for the testing set of",
+      "Predicted and actual number of injured for the testing set of",
       "accident reports"
     ),
     subtitle = "For the testing set, predictions are most accurate between 0-5 injured"
   ) +
-  #scale_x_continuous(breaks = seq(0, 22, by = 1)) +
+  scale_x_continuous(breaks = seq(0, 12, by = 1)) +
   theme_bw()
 
-full_data_bind <- collect_predictions(final_regression_fitted) %>%
+full_data_regression_bind <- collect_predictions(final_regression_fitted) %>%
   bind_cols(full_data_test %>% select(-antall_skadet)) %>%
   filter(abs(antall_skadet - .pred) > 1)
 
-full_data_bind %>%
+full_data_regression_bind %>%
   arrange(-antall_skadet) %>%
-  select(antall_skadet, .pred, ALL)
-
-#### OL ####
-# Maybe we can aggregate some specific terms?
-
-
-
-avg_ol_hits  <- aggregate(eu_hits ~ Month, date_eu_hits, mean)
-
-
-#### Deceased regression #####
-# Trying it out with deceased rather than injured and adding some predictor
-# variables
-
-# Tuning the model and changing the number of tokens we use
-
-final_deceased_regression_rec <- recipe(antall_omkommet ~ ALL + ulykketype, data = full_data_train) %>%
-  step_tokenize(ALL, token = "ngrams", options = list(n = 2, n_min = 1)) %>%
-  step_tokenfilter(ALL, max_tokens = tune()) %>%
-  step_stopwords(language = "no") %>%
-  step_stopwords(custom_stopword_source = custom_words) %>%
-  step_stopwords(language = "en") %>%
-  step_tfidf(ALL) %>%
-  step_normalize(all_predictors())
-
-final_deceased_regression_rec
-
-svm_spec <- svm_linear() %>%
-  set_mode("regression") %>%
-  set_engine("LiblineaR")
-
-svm_spec
-
-tune_deceased_regression_wf <- workflow() %>%
-  add_recipe(final_deceased_regression_rec) %>%
-  add_model(svm_spec)
-
-tune_deceased_regression_wf
-
-final_grid <- grid_regular(max_tokens(range = c(1e3, 1e10)),
-                           levels = 10)
-
-final_grid
-
-final_deceased_regression_rs <- tune_grid(
-  tune_deceased_regression_wf,
-  full_data_folds,
-  grid = final_grid,
-  metrics = metric_set(rmse, mae),
-  control = control_resamples(save_pred = TRUE)
-)
-
-final_decased_regression_rs
-
-# Grapichally represent differences
-final_deceased_regression_rs %>%
-  collect_metrics() %>%
-  ggplot(aes(max_tokens, mean, color = .metric)) +
-  geom_line(size = 1.5, alpha = 0.5) +
-  geom_point(size = 2, alpha = 0.9) +
-  facet_wrap( ~ .metric, scales = "free_y", ncol = 1) +
-  theme_bw()+
-  scale_x_continuous(breaks = seq(0, 10000, by = 2000))+
-  theme(legend.position = "none") +
-  labs(x = "Number of tokens",
-       title = "Linear SVM performance across number of tokens",
-       subtitle = "Performance decreases (????) as more tokens are included")
-
-chosen_deceased_mae <- final_deceased_regression_rs %>%
-  select_by_pct_loss(metric = "mae", max_tokens, limit = 3)
-
-# check std error
-
-chosen_deceased__mae
-
-final_deceased_regression_wf <- finalize_workflow(tune_deceased_regression_wf, chosen_deceased_mae)
-
-final_deceased_regression_wf
-
-# Evaluating it on real data
-
-final_deceased_regression_fitted <- last_fit(final_deceased_regression_wf, full_data_split)
-
-collect_metrics(final_deceased_regression_fitted)
-
-full_data_deceased_fit <- pull_workflow_fit(final_deceased_regression_fitted$.workflow[[1]])
-
-full_data_deceased_fit %>%
-  tidy() %>%
-  filter(term != "Bias") %>%
-  #filter(term != "fartøyets") %>%
-  mutate(
-    sign = case_when(
-      estimate > 0 ~ "More (than mean deceased)",
-      TRUE ~ "Less (than mean deceased)"
-    ),
-    estimate = abs(estimate),
-    term = str_remove_all(term, "tfidf_ALL_")
-  ) %>%
-  group_by(sign) %>%
-  top_n(20, estimate) %>%
-  ungroup() %>%
-  ggplot(aes(
-    x = estimate,
-    y = fct_reorder(term, estimate),
-    fill = sign
-  )) +
-  geom_col(show.legend = FALSE) +
-  scale_x_continuous(expand = c(0, 0)) +
-  facet_wrap( ~ sign, scales = "free") +
-  labs(
-    y = NULL,
-    title = paste(
-      "Variable importance for predicting amount of",
-      "injured people in accident reports"
-    ),
-    subtitle = paste(
-      "These features are the most importance",
-      "in predicting the amount of injured"
-    )
-  ) +
-  theme_bw() +
-  scale_fill_manual(values = c(safe_colorblind_palette))
-
-full_data_deceased_fit %>%
-  collect_predictions() %>%
-  ggplot(aes(antall_skadet, .pred)) +
-  geom_abline(lty = 2, color = "gray80", size = 1.5) +
-  geom_point(alpha = 0.3) +
-  labs(
-    x = "Actual",
-    y = "Predicted amount of injured people",
-    title = paste(
-      "Predicted and actual amount of injured for the testing set of",
-      "accident reports"
-    ),
-    subtitle = "For the testing set, predictions are most accurate between 0-5 injured"
-  ) +
-  #scale_x_continuous(breaks = seq(0, 22, by = 1)) +
-  theme_bw()
-
-full_data_deceased_bind <- collect_predictions(final_deceased_regression_fitted) %>%
-  bind_cols(full_data %>% select(-antall_omkommet)) %>%
-  filter(abs(antall_omkommet - .pred) > 1)
-
-full_data_deceased_bind %>%
-  arrange(-antall_omkommet) %>%
-  select(antall_omkommet, .pred, ALL)
-
+  select(antall_skadet, .pred, ALL_cleaned)
 
 
 #### LDA modeling ####
@@ -3084,15 +3389,17 @@ full_data_DTM_tidy <- tidy(full_data_DTM)
 # very informative in these reports
 custom_words
 
-norwegian_stop_words <-
-  rbind(tibble(word = tm::stopwords(kind = "no")), tibble(word = custom_words))
-
+all_stop_words <-
+  rbind(
+    tibble(word = tm::stopwords(kind = "no")),
+    tibble(word = tm::stopwords(kind = "en")),
+    tibble(word = custom_words)
+  )
 
 # remove stopwords
 full_data_DTM_tidy_cleaned <-
   full_data_DTM_tidy %>% # take our tidy dtm and...
-  anti_join(norwegian_stop_words, by = c("term" = "word")) %>% # remove Norwegian stopwords and custom words
-  anti_join(stop_words, by = c("term" = "word")) %>% # remove English stopwords as well
+  anti_join(all_stop_words, by = c("term" = "word")) %>% # remove Norwegian stopwords and custom words
   removeNumbers() %>%
   removePunctuation()
 
@@ -3214,9 +3521,6 @@ ggplot(sentiments, aes(x = as.numeric(ulykkesår), y = sentiment)) +
   geom_point(aes(color = ulykkesår)) + # add points to our plot, color-coded by president
   geom_smooth(method = "auto") # pick a method & fit a model
 
-
-small_data <- full_data[!is.na(full_data$ALL), ]
-
 full_data_cleaned <- full_data %>%
   unnest_tokens(word, ALL) %>%
   anti_join(get_stopwords("no")) %>%
@@ -3244,8 +3548,8 @@ full_data_cleaned <- full_data %>%
 #create DTM
 library(textmineR)
 dtm <- CreateDtm(full_data_cleaned$word,
-                 ngram_window = c(1, 3))
-#, stem_lemma_function = function(x) SnowballC::wordStem(x, language = "norwegian"
+                 ngram_window = c(1, 3),
+                 stem_lemma_function = function(x) SnowballC::wordStem(x, language = "norwegian"))
 
 tf <- TermDocFreq(dtm = dtm)
 
@@ -3257,18 +3561,24 @@ original_tf <-
 vocabulary <-
   tf$term[tf$term_freq > 1 & tf$doc_freq < nrow(dtm) / 2]
 
+setwd("~/Master/masterthesis/")
+
 model_dir <-
   paste0("models_", digest::digest(vocabulary, algo = "sha1"))
 if (!dir.exists(model_dir))
   dir.create(model_dir)
 
-k_list <- seq(1, 196, by = 1)
-setwd("~/Master/masterthesis/models_b6f60a5ca3dbd516b99a26f66ee8276ad1ed2829")
+# The processing was interrupted, restarting with the same model_dir
+
+model_dir <- paste0("models_b3b1193671e73d998f36a10e5916e794d3529c6a")
+
+k_list <- seq(1, 14, by = 1)
 
 library(parallel)
 tick <- Sys.time()
 
-model_dir <- paste0("models_b6f60a5ca3dbd516b99a26f66ee8276ad1ed2829")
+# Completed 200 topics, but with old data.
+# model_dir <- paste0("models_b6f60a5ca3dbd516b99a26f66ee8276ad1ed2829")
 
 model_list <-
   TmParallelApply(
@@ -3298,11 +3608,11 @@ model_list <-
 
 #model tuning
 
-file_names <- as.list(dir(path = model_dir, pattern="*_topics.rda"))
+# file_names <- as.list(dir(path = model_dir, pattern="*_topics.rda"))
 
-cores <- makeCluster(detectCores()/2)
+# cores <- makeCluster(detectCores()/2)
 
-model_list <- parLapply(file_names, function(x){get(load(x,.GlobalEnv))}, cl = cores)
+# model_list <- parLapply(file_names, function(x){get(load(x,.GlobalEnv))}, cl = cores)
 
 
 #choosing the best model
@@ -3313,15 +3623,15 @@ coherence_mat <-
     coherence = sapply(model_list, function(x)
       mean(x$coherence)),
     stringsAsFactors = FALSE
-  ) %>%
+  )
 
 
 ggplot(coherence_mat, aes(x = k, y = coherence)) +
   geom_point() +
   geom_line(group = 1) +
-  ggtitle("Best topics by coherence score, k = 1-181") +
+  ggtitle("Best topics by coherence score, k = 1-14") +
   theme_bw() +
-  #scale_x_continuous(breaks = seq(1, 20, by = 1)) +
+  scale_x_continuous(breaks = seq(1, 14, by = 1)) +
   #scale_y_continuous(limits = c(-0.008, 0),
   #breaks = seq(-0.008, 0, by = 0.001)) +
   ylab("Coherence")
@@ -3357,8 +3667,8 @@ library(textmineR)
 r2 <-
   CalcTopicModelR2(
     dtm = dtm,
-    phi = model_list[[118]]$phi,
-    theta = model_list[[118]]$theta,
+    phi = model_list[[12]]$phi,
+    theta = model_list[[12]]$theta,
     cpus = 12
   )
 
@@ -3429,6 +3739,7 @@ head(tf_meanantallskadet_bigram$more, 10)
 
 full_data_Corpus <-
   Corpus(VectorSource(removePunctuation(full_data$ALL)))
+
 full_data_DTM <- DocumentTermMatrix(full_data_Corpus,
                                     control = list(weighting = "weightTfIdf",
                                                    removeNumbers = TRUE))
@@ -3586,7 +3897,158 @@ wordcloud::wordcloud(
 
 
 
-# other stuff
+#### Not used below: ####
+
+
+#### OL ####
+# Maybe we can aggregate some specific terms?
+
+# avg_ol_hits  <- aggregate(eu_hits ~ Month, date_eu_hits, mean)
+
+# Create some descriptive statistics of the wrongly predicted accident types,
+# by year, month, MTO by accident type, etc. 
+
+
+
+##### Deceased regression #####
+# Trying it out with deceased rather than injured and adding some predictor
+# variables
+
+# Tuning the model and changing the number of tokens we use
+
+final_deceased_regression_rec <- recipe(antall_omkommet ~ ALL + ulykketype, data = full_data_train) %>%
+  step_tokenize(ALL, token = "ngrams", options = list(n = 2, n_min = 1)) %>%
+  step_tokenfilter(ALL_cleaned, max_tokens = tune()) %>%
+  step_stopwords(language = "no") %>%
+  step_stopwords(custom_stopword_source = custom_words) %>%
+  step_stopwords(language = "en") %>%
+  step_tfidf(ALL_cleaned) %>%
+  step_normalize(all_predictors())
+
+final_deceased_regression_rec
+
+svm_spec <- svm_linear() %>%
+  set_mode("regression") %>%
+  set_engine("LiblineaR")
+
+svm_spec
+
+tune_deceased_regression_wf <- workflow() %>%
+  add_recipe(final_deceased_regression_rec) %>%
+  add_model(svm_spec)
+
+tune_deceased_regression_wf
+
+final_grid <- grid_regular(max_tokens(range = c(1e3, 1e10)),
+                           levels = 10)
+
+final_grid
+
+final_deceased_regression_rs <- tune_grid(
+  tune_deceased_regression_wf,
+  full_data_folds,
+  grid = final_grid,
+  metrics = metric_set(rmse, mae),
+  control = control_resamples(save_pred = TRUE)
+)
+
+final_decased_regression_rs
+
+# Grapichally represent differences
+final_deceased_regression_rs %>%
+  collect_metrics() %>%
+  ggplot(aes(max_tokens, mean, color = .metric)) +
+  geom_line(size = 1.5, alpha = 0.5) +
+  geom_point(size = 2, alpha = 0.9) +
+  facet_wrap( ~ .metric, scales = "free_y", ncol = 1) +
+  theme_bw()+
+  scale_x_continuous(breaks = seq(0, 10000, by = 2000))+
+  theme(legend.position = "none") +
+  labs(x = "Number of tokens",
+       title = "Linear SVM performance across number of tokens",
+       subtitle = "Performance decreases (????) as more tokens are included")
+
+chosen_deceased_mae <- final_deceased_regression_rs %>%
+  select_by_pct_loss(metric = "mae", max_tokens, limit = 3)
+
+# check std error
+
+chosen_deceased__mae
+
+final_deceased_regression_wf <- finalize_workflow(tune_deceased_regression_wf, chosen_deceased_mae)
+
+final_deceased_regression_wf
+
+# Evaluating it on real data
+
+final_deceased_regression_fitted <- last_fit(final_deceased_regression_wf, full_data_split)
+
+collect_metrics(final_deceased_regression_fitted)
+
+full_data_deceased_fit <- pull_workflow_fit(final_deceased_regression_fitted$.workflow[[1]])
+
+full_data_deceased_fit %>%
+  tidy() %>%
+  filter(term != "Bias") %>%
+  #filter(term != "fartøyets") %>%
+  mutate(
+    sign = case_when(
+      estimate > 0 ~ "More (than mean deceased)",
+      TRUE ~ "Less (than mean deceased)"
+    ),
+    estimate = abs(estimate),
+    term = str_remove_all(term, "tfidf_ALL_")
+  ) %>%
+  group_by(sign) %>%
+  top_n(20, estimate) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = estimate,
+    y = fct_reorder(term, estimate),
+    fill = sign
+  )) +
+  geom_col(show.legend = FALSE) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap( ~ sign, scales = "free") +
+  labs(
+    y = NULL,
+    title = paste(
+      "Variable importance for predicting amount of",
+      "injured people in accident reports"
+    ),
+    subtitle = paste(
+      "These features are the most importance",
+      "in predicting the amount of injured"
+    )
+  ) +
+  theme_bw() +
+  scale_fill_manual(values = c(safe_colorblind_palette))
+
+full_data_deceased_fit %>%
+  collect_predictions() %>%
+  ggplot(aes(antall_skadet, .pred)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_point(alpha = 0.3) +
+  labs(
+    x = "Actual",
+    y = "Predicted amount of injured people",
+    title = paste(
+      "Predicted and actual amount of injured for the testing set of",
+      "accident reports"
+    ),
+    subtitle = "For the testing set, predictions are most accurate between 0-5 injured"
+  ) +
+  #scale_x_continuous(breaks = seq(0, 22, by = 1)) +
+  theme_bw()
+
+full_data_deceased_bind <- collect_predictions(final_deceased_regression_fitted) %>%
+  bind_cols(full_data %>% select(-antall_omkommet)) %>%
+  filter(abs(antall_omkommet - .pred) > 1)
+
+full_data_deceased_bind %>%
+  arrange(-antall_omkommet) %>%
+  select(antall_omkommet, .pred, ALL)
+
 cleaned_full_data <- full_data %>%
   unnest_tokens(word, ALL) %>%
   anti_join(get_stopwords("no")) %>%
